@@ -1,0 +1,9 @@
+name = "luccas-portfolio-api"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+# Add any non-sensitive variables here
+
+[[env.production]]
+name = "luccas-portfolio-api"
