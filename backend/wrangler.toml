@@ -1,9 +1,9 @@
 name = "luccas-portfolio-api"
 main = "worker.js"
 compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
 
-[vars]
-# Add any non-sensitive variables here
+[env.production]
+name = "luccas-portfolio-backend"
 
-[[env.production]]
-name = "luccas-portfolio-api"
+# Note: DROPBOX_ACCESS_TOKEN should be set via Cloudflare dashboard, not here
