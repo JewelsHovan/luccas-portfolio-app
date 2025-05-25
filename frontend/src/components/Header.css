@@ -1,0 +1,46 @@
+.header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  padding: 20px 0;
+}
+
+.header-content {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 40px;
+}
+
+.logo {
+  font-family: 'Codystar', cursive;
+  font-size: 32px;
+  font-weight: 400;
+  letter-spacing: 4px;
+  color: #000;
+  margin: 0;
+}
+
+
+@media (max-width: 768px) {
+  .header {
+    padding: 15px 20px;
+  }
+  
+  .header-content {
+    max-width: 100%;
+  }
+  
+  .logo {
+    font-size: 20px;
+    letter-spacing: 3px;
+  }
+}

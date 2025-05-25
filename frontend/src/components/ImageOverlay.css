@@ -1,0 +1,117 @@
+.image-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 30px;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+  height: 100%;
+  justify-content: center;
+}
+
+.canvas-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overlay-canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e5e5e5;
+  border-top-color: #666;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.controls {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.generate-btn,
+.download-btn {
+  background: #000;
+  color: white;
+  border: none;
+  padding: 14px 28px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 120px;
+}
+
+.generate-btn:hover,
+.download-btn:hover {
+  background: #333;
+  transform: translateY(-1px);
+}
+
+.generate-btn:disabled,
+.download-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.download-btn {
+  background: transparent;
+  color: #000;
+  border: 1px solid #000;
+}
+
+.download-btn:hover {
+  background: #000;
+  color: white;
+}
+
+.download-btn:disabled {
+  border-color: #ccc;
+  color: #ccc;
+  background: transparent;
+}
+
+@media (max-width: 768px) {
+  .canvas-container {
+    padding: 20px;
+  }
+  
+  .controls {
+    flex-direction: column;
+    width: 100%;
+    max-width: 300px;
+  }
+  
+  .generate-btn,
+  .download-btn {
+    width: 100%;
+  }
+}
