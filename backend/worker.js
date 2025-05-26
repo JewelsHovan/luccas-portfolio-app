@@ -137,7 +137,7 @@ export default {
         }
         
         // Check for Dropbox access token
-        if (!env.DROPBOX_ACCESS_TOKEN) {
+        if (!env.DROPBOX_API_TOKEN) {
             return handleCors(request, new Response(JSON.stringify({
                 error: 'DROPBOX_ACCESS_TOKEN not configured'
             }), {
@@ -148,7 +148,7 @@ export default {
         
         // Initialize Dropbox client
         const dbx = new Dropbox({ 
-            accessToken: env.DROPBOX_ACCESS_TOKEN,
+            accessToken: env.DROPBOX_API_TOKEN,
             fetch: fetch
         });
         
