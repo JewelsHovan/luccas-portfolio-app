@@ -6,9 +6,44 @@ let imageCache = {
     cacheTimeout: 4 * 60 * 60 * 1000 // 4 hours (temp links expire)
 };
 
+// Recent selections to prevent duplicates
+let recentSelections = {
+    base: [],
+    overlay: [],
+    maxHistory: 2 // Prevent last 2 selections from repeating
+};
+
 // Function to get random item from array
 function getRandomItem(array) {
     return array[Math.floor(Math.random() * array.length)];
+}
+
+// Function to get random item excluding recent selections
+function getRandomItemExcluding(array, type) {
+    const excludeList = recentSelections[type];
+    const available = array.filter(item => 
+        !excludeList.some(excluded => excluded.path === item.path)
+    );
+    
+    // If we've excluded too many items, use full array
+    if (available.length === 0) {
+        // Reset history and use full array
+        recentSelections[type] = [];
+        return getRandomItem(array);
+    }
+    
+    // Get random from available items
+    const selected = available[Math.floor(Math.random() * available.length)];
+    
+    // Add to recent selections
+    recentSelections[type].push(selected);
+    
+    // Keep only last N selections
+    if (recentSelections[type].length > recentSelections.maxHistory) {
+        recentSelections[type].shift();
+    }
+    
+    return selected;
 }
 
 // Direct Dropbox API call using fetch
@@ -238,8 +273,8 @@ export default {
                     }));
                 }
                 
-                const randomBaseImage = getRandomItem(imageCache.baseImages);
-                const randomOverlayImage = getRandomItem(imageCache.overlayImages);
+                const randomBaseImage = getRandomItemExcluding(imageCache.baseImages, 'base');
+                const randomOverlayImage = getRandomItemExcluding(imageCache.overlayImages, 'overlay');
                 
                 console.log(`Serving random images: ${randomBaseImage.name} + ${randomOverlayImage.name}`);
                 
