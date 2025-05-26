@@ -50,6 +50,7 @@ function App() {
           />
         </div>
       </main>
+      <div className="copyright">©luccasbooth</div>
     </div>
   );
 }
