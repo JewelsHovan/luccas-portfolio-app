@@ -34,7 +34,7 @@ let collectionsCache = {
 let recentSelections = {
     base: [],
     overlay: [],
-    maxHistory: 2 // Prevent last 2 selections from repeating
+    maxHistory: 10 // Prevent last 10 selections from repeating
 };
 
 // Function to refresh access token
@@ -102,11 +102,18 @@ function getRandomItemExcluding(array, type) {
         !excludeList.some(excluded => excluded.path === item.path)
     );
     
-    // If we've excluded too many items, use full array
-    if (available.length === 0) {
-        // Reset history and use full array
-        recentSelections[type] = [];
-        return getRandomItem(array);
+    console.log(`[${type}] Total: ${array.length}, Excluded: ${excludeList.length}, Available: ${available.length}`);
+    
+    // If we've excluded too many items (less than 20% available), reset
+    if (available.length === 0 || available.length < Math.max(1, Math.floor(array.length * 0.2))) {
+        console.log(`[${type}] Resetting history - too few available items`);
+        // Keep only the last 2 to avoid immediate repeats
+        recentSelections[type] = excludeList.slice(-2);
+        // Recalculate available
+        const newAvailable = array.filter(item => 
+            !recentSelections[type].some(excluded => excluded.path === item.path)
+        );
+        return getRandomItem(newAvailable.length > 0 ? newAvailable : array);
     }
     
     // Get random from available items
@@ -115,8 +122,11 @@ function getRandomItemExcluding(array, type) {
     // Add to recent selections
     recentSelections[type].push(selected);
     
+    // Dynamically adjust history size based on array size
+    const dynamicMaxHistory = Math.min(10, Math.floor(array.length * 0.5));
+    
     // Keep only last N selections
-    if (recentSelections[type].length > recentSelections.maxHistory) {
+    if (recentSelections[type].length > dynamicMaxHistory) {
         recentSelections[type].shift();
     }
     
@@ -333,7 +343,7 @@ export default {
             }));
         }
         
-        // Handle /api/images endpoint
+        // Handle /api/images endpoint - returns all cached images
         if (url.pathname === '/api/images' && request.method === 'GET') {
             try {
                 // Check if cache needs refresh
@@ -346,38 +356,21 @@ export default {
                     await refreshImageCache(env);
                 }
                 
-                // Return 2 random images (1 base + 1 overlay)
-                if (imageCache.baseImages.length === 0 || imageCache.overlayImages.length === 0) {
-                    return handleCors(request, new Response(JSON.stringify({
-                        error: 'No images found in Dropbox folders',
-                        details: {
-                            baseImagesCount: imageCache.baseImages.length,
-                            overlayImagesCount: imageCache.overlayImages.length
-                        }
-                    }), {
-                        status: 404,
-                        headers: { 'Content-Type': 'application/json' }
-                    }));
-                }
-                
-                const randomBaseImage = getRandomItemExcluding(imageCache.baseImages, 'base');
-                const randomOverlayImage = getRandomItemExcluding(imageCache.overlayImages, 'overlay');
-                
-                console.log(`Serving random images: ${randomBaseImage.name} + ${randomOverlayImage.name}`);
+                console.log(`Returning all images: ${imageCache.baseImages.length} base, ${imageCache.overlayImages.length} overlay`);
                 
                 const response = new Response(JSON.stringify({
-                    baseImage: randomBaseImage,
-                    overlayImage: randomOverlayImage,
+                    baseImages: imageCache.baseImages,
+                    overlayImages: imageCache.overlayImages,
                     totalCounts: {
                         base: imageCache.baseImages.length,
                         overlay: imageCache.overlayImages.length
-                    }
+                    },
+                    cached: !needsRefresh
                 }), {
                     status: 200,
                     headers: { 
                         'Content-Type': 'application/json',
-                        // Add cache control headers to prevent aggressive reloading
-                        'Cache-Control': 'public, max-age=60, s-maxage=60',
+                        'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
                         'Vary': 'Origin'
                     }
                 });
@@ -388,6 +381,56 @@ export default {
                 console.error('Error fetching images:', error);
                 return handleCors(request, new Response(JSON.stringify({
                     error: 'Failed to fetch images',
+                    details: error.message
+                }), {
+                    status: 500,
+                    headers: { 'Content-Type': 'application/json' }
+                }));
+            }
+        }
+        
+        // Handle /api/generateOverlay endpoint - returns 2 random images
+        if (url.pathname === '/api/generateOverlay' && request.method === 'GET') {
+            try {
+                // Make sure cache is populated
+                if (imageCache.baseImages.length === 0 || imageCache.overlayImages.length === 0) {
+                    await refreshImageCache(env);
+                }
+                
+                if (imageCache.baseImages.length === 0 || imageCache.overlayImages.length === 0) {
+                    return handleCors(request, new Response(JSON.stringify({
+                        error: 'No images found in cache'
+                    }), {
+                        status: 404,
+                        headers: { 'Content-Type': 'application/json' }
+                    }));
+                }
+                
+                // Simple random selection
+                const randomBaseImage = getRandomItem(imageCache.baseImages);
+                const randomOverlayImage = getRandomItem(imageCache.overlayImages);
+                
+                console.log(`[generateOverlay] ${randomBaseImage.name} + ${randomOverlayImage.name}`);
+                
+                const response = new Response(JSON.stringify({
+                    baseImage: randomBaseImage,
+                    overlayImage: randomOverlayImage
+                }), {
+                    status: 200,
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache',
+                        'Expires': '0'
+                    }
+                });
+                
+                return handleCors(request, response);
+                
+            } catch (error) {
+                console.error('Error generating overlay:', error);
+                return handleCors(request, new Response(JSON.stringify({
+                    error: 'Failed to generate overlay',
                     details: error.message
                 }), {
                     status: 500,

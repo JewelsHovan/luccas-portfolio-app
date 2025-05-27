@@ -151,15 +151,23 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
   }, [baseImage, overlayImage, settings, loadImageWithRetry, retryCount]);
 
   useEffect(() => {
-    // Add small delay to ensure component is mounted
-    const timer = setTimeout(() => {
-      if (baseImage && overlayImage) {
-        generateOverlay();
-      }
-    }, 100);
+    if (!baseImage || !overlayImage) return;
     
-    return () => clearTimeout(timer);
-  }, [baseImage, overlayImage, generateOverlay]);
+    console.log('ImageOverlay effect triggered:', {
+      base: baseImage.name,
+      overlay: overlayImage.name
+    });
+    
+    // Only generate if not already generating
+    if (!isGenerating) {
+      // Add small delay to ensure component is mounted
+      const timer = setTimeout(() => {
+        generateOverlay();
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [baseImage?.url, overlayImage?.url]); // Use URLs as dependencies
 
   const downloadImage = () => {
     const canvas = canvasRef.current;
@@ -182,7 +190,12 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
           width={canvasWidth} 
           height={canvasHeight}
           className="overlay-canvas"
-          onClick={onRefresh || generateOverlay}
+          onClick={() => {
+            if (!isGenerating && onRefresh) {
+              console.log('Canvas clicked, calling onRefresh');
+              onRefresh();
+            }
+          }}
           style={{ cursor: isGenerating ? 'wait' : 'pointer' }}
         />
         {isGenerating && (

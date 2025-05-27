@@ -21,11 +21,24 @@ class ApiService {
     }
   }
 
-  async fetchImages() {
+  async fetchAllImages() {
     try {
       const response = await this.fetchWithTimeout(`${API_BASE_URL}/api/images`);
       if (!response.ok) {
         throw new Error('Failed to fetch images');
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('API Error:', error);
+      throw error;
+    }
+  }
+
+  async generateOverlay() {
+    try {
+      const response = await this.fetchWithTimeout(`${API_BASE_URL}/api/generateOverlay`);
+      if (!response.ok) {
+        throw new Error('Failed to generate overlay');
       }
       return await response.json();
     } catch (error) {
