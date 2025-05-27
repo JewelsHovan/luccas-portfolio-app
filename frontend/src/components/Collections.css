@@ -1,0 +1,312 @@
+.collections-page {
+  min-height: 100vh;
+  padding-top: 80px;
+  background-color: #f8f8f8;
+}
+
+.collections-header {
+  position: fixed;
+  top: 72px;
+  left: 0;
+  right: 0;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  z-index: 900;
+  padding: 20px;
+}
+
+.collections-nav {
+  display: flex;
+  gap: 40px;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 40px;
+}
+
+.collection-link {
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  font-weight: 400;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-transform: capitalize;
+  color: #000;
+  transition: all 0.3s ease;
+  position: relative;
+  letter-spacing: 0.5px;
+}
+
+.collection-link:hover {
+  opacity: 0.7;
+}
+
+.collection-link.active {
+  color: #666;
+}
+
+.collection-link.active::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: #000;
+}
+
+.collections-container {
+  position: fixed;
+  top: 132px;
+  left: 0;
+  right: 0;
+  bottom: 20px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+.collections-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.collections-container::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.collections-container::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.collections-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.images-scroll {
+  padding: 20px 0 40px 0;
+}
+
+.image-container {
+  min-height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  margin-bottom: 40px;
+  opacity: 0.3;
+  transition: opacity 0.5s ease;
+}
+
+.image-container:last-child {
+  margin-bottom: 100px;
+}
+
+.image-container.active {
+  opacity: 1;
+}
+
+.image-container img {
+  max-width: 85%;
+  max-height: 75vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease;
+}
+
+.image-container.active img {
+  transform: scale(1.02);
+}
+
+.image-info {
+  margin-top: 20px;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.image-container.active .image-info {
+  opacity: 1;
+}
+
+.image-info p {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  margin: 0 0 5px 0;
+  letter-spacing: 0.5px;
+}
+
+.image-info span {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #666;
+}
+
+/* Progress indicator */
+.progress-indicator {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background-color: rgba(0, 0, 0, 0.1);
+  z-index: 901;
+}
+
+.progress-bar {
+  height: 100%;
+  background-color: #000;
+  transition: width 0.3s ease;
+}
+
+/* No collection selected */
+.no-collection-selected {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(100vh - 200px);
+  padding-top: 80px;
+}
+
+.no-collection-selected p {
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  color: #666;
+  letter-spacing: 0.5px;
+}
+
+/* Loading state */
+.collections-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: calc(100vh - 200px);
+  padding-top: 80px;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-top-color: #000;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.collections-loading p {
+  margin-top: 20px;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  color: #666;
+  letter-spacing: 0.5px;
+}
+
+/* Error state */
+.collections-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: calc(100vh - 200px);
+  padding-top: 80px;
+  text-align: center;
+  padding: 20px;
+}
+
+.collections-error h3 {
+  font-family: 'Courier New', monospace;
+  font-size: 20px;
+  margin: 0 0 10px 0;
+  letter-spacing: 0.5px;
+}
+
+.collections-error p {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  color: #666;
+  margin: 0 0 20px 0;
+}
+
+.collections-error button {
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  padding: 10px 20px;
+  background-color: #000;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: opacity 0.3s ease;
+}
+
+.collections-error button:hover {
+  opacity: 0.8;
+}
+
+/* No images state */
+.no-images {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(100vh - 200px);
+}
+
+.no-images p {
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  color: #666;
+  letter-spacing: 0.5px;
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+  .collections-header {
+    top: 62px;
+    padding: 15px;
+  }
+
+  .collections-nav {
+    padding: 0 20px;
+    gap: 25px;
+    justify-content: center;
+  }
+
+  .collection-link {
+    font-size: 14px;
+  }
+
+  .collections-container {
+    top: 115px;
+  }
+
+  .image-container {
+    min-height: calc(40vh);
+    padding: 10px;
+    margin-bottom: 5px;
+  }
+
+  .image-container img {
+    max-width: 95%;
+    max-height: 65vh;
+  }
+
+  .image-info p {
+    font-size: 12px;
+  }
+
+  .image-info span {
+    font-size: 10px;
+  }
+}
