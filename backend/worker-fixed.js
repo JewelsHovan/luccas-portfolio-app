@@ -1,8 +1,32 @@
+// Token management cache
+let tokenCache = {
+    accessToken: null,
+    expiresAt: null,
+    refreshToken: null
+};
+
 // Cache for images (stored in global scope for persistence across requests)
 let imageCache = {
     baseImages: [],
     overlayImages: [],
     lastFetch: null,
+    cacheTimeout: 4 * 60 * 60 * 1000 // 4 hours (temp links expire)
+};
+
+// Cache for collections (sketchbooks, paintings, photo)
+let collectionsCache = {
+    sketchbooks: {
+        images: [],
+        lastFetch: null
+    },
+    paintings: {
+        images: [],
+        lastFetch: null
+    },
+    photo: {
+        images: [],
+        lastFetch: null
+    },
     cacheTimeout: 4 * 60 * 60 * 1000 // 4 hours (temp links expire)
 };
 
@@ -12,6 +36,59 @@ let recentSelections = {
     overlay: [],
     maxHistory: 2 // Prevent last 2 selections from repeating
 };
+
+// Function to refresh access token
+async function refreshAccessToken(env) {
+    if (!env.DROPBOX_REFRESH_TOKEN || !env.DROPBOX_APP_KEY || !env.DROPBOX_APP_SECRET) {
+        throw new Error('Missing required Dropbox credentials for token refresh');
+    }
+
+    console.log('Refreshing Dropbox access token...');
+
+    const response = await fetch('https://api.dropbox.com/oauth2/token', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: env.DROPBOX_REFRESH_TOKEN,
+            client_id: env.DROPBOX_APP_KEY,
+            client_secret: env.DROPBOX_APP_SECRET
+        })
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to refresh token: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    
+    // Update token cache
+    tokenCache.accessToken = data.access_token;
+    tokenCache.expiresAt = Date.now() + (data.expires_in * 1000) - (5 * 60 * 1000); // Subtract 5 minutes for safety
+    
+    console.log('Access token refreshed successfully, expires in', data.expires_in, 'seconds');
+    
+    return data.access_token;
+}
+
+// Function to get valid access token
+async function getValidAccessToken(env) {
+    // If using a long-lived token (legacy), return it directly
+    if (env.DROPBOX_ACCESS_TOKEN && !env.DROPBOX_REFRESH_TOKEN) {
+        return env.DROPBOX_ACCESS_TOKEN;
+    }
+
+    // Check if we have a cached token that's still valid
+    if (tokenCache.accessToken && tokenCache.expiresAt && Date.now() < tokenCache.expiresAt) {
+        return tokenCache.accessToken;
+    }
+
+    // Need to refresh the token
+    return await refreshAccessToken(env);
+}
 
 // Function to get random item from array
 function getRandomItem(array) {
@@ -46,8 +123,10 @@ function getRandomItemExcluding(array, type) {
     return selected;
 }
 
-// Direct Dropbox API call using fetch
-async function dropboxApiCall(endpoint, accessToken, body = null) {
+// Direct Dropbox API call using fetch with automatic token refresh
+async function dropboxApiCall(endpoint, env, body = null, retryCount = 0) {
+    const accessToken = await getValidAccessToken(env);
+    
     const options = {
         method: 'POST',
         headers: {
@@ -66,6 +145,13 @@ async function dropboxApiCall(endpoint, accessToken, body = null) {
     
     const response = await fetch(`https://api.dropboxapi.com/2/${endpoint}`, options);
     
+    // If unauthorized and we haven't retried yet, refresh token and retry
+    if (response.status === 401 && retryCount === 0) {
+        console.log('Access token expired, refreshing and retrying...');
+        await refreshAccessToken(env);
+        return dropboxApiCall(endpoint, env, body, retryCount + 1);
+    }
+    
     if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Dropbox API error: ${response.status} - ${errorText}`);
@@ -75,7 +161,7 @@ async function dropboxApiCall(endpoint, accessToken, body = null) {
 }
 
 // Function to recursively get all images from a directory using direct API calls
-async function getAllImagesFromFolder(accessToken, folderPath) {
+async function getAllImagesFromFolder(env, folderPath) {
     const images = [];
     
     async function scanFolder(path) {
@@ -83,7 +169,7 @@ async function getAllImagesFromFolder(accessToken, folderPath) {
             console.log(`Scanning folder: ${path}`);
             
             // List folder contents
-            let response = await dropboxApiCall('files/list_folder', accessToken, {
+            let response = await dropboxApiCall('files/list_folder', env, {
                 path: path,
                 recursive: false,
                 include_deleted: false,
@@ -101,7 +187,7 @@ async function getAllImagesFromFolder(accessToken, folderPath) {
                         
                         try {
                             // Get temporary link
-                            const tempLinkResponse = await dropboxApiCall('files/get_temporary_link', accessToken, {
+                            const tempLinkResponse = await dropboxApiCall('files/get_temporary_link', env, {
                                 path: entry.path_display
                             });
                             
@@ -124,7 +210,7 @@ async function getAllImagesFromFolder(accessToken, folderPath) {
             
             // Handle pagination
             while (response.has_more) {
-                response = await dropboxApiCall('files/list_folder/continue', accessToken, {
+                response = await dropboxApiCall('files/list_folder/continue', env, {
                     cursor: response.cursor
                 });
                 
@@ -136,7 +222,7 @@ async function getAllImagesFromFolder(accessToken, folderPath) {
                             name.endsWith('.webp')) {
                             
                             try {
-                                const tempLinkResponse = await dropboxApiCall('files/get_temporary_link', accessToken, {
+                                const tempLinkResponse = await dropboxApiCall('files/get_temporary_link', env, {
                                     path: entry.path_display
                                 });
                                 
@@ -168,13 +254,13 @@ async function getAllImagesFromFolder(accessToken, folderPath) {
 }
 
 // Function to refresh image cache
-async function refreshImageCache(accessToken) {
+async function refreshImageCache(env) {
     console.log('Refreshing image cache...');
     
     try {
         const [baseImages, overlayImages] = await Promise.all([
-            getAllImagesFromFolder(accessToken, '/Homepage/large_rectangle_database'),
-            getAllImagesFromFolder(accessToken, '/Homepage/small_rectangle_database')
+            getAllImagesFromFolder(env, '/Homepage/large_rectangle_database'),
+            getAllImagesFromFolder(env, '/Homepage/small_rectangle_database')
         ]);
         
         imageCache.baseImages = baseImages;
@@ -225,10 +311,10 @@ export default {
             return handleCors(request, new Response(null, { status: 204 }));
         }
         
-        // Check for Dropbox access token
-        if (!env.DROPBOX_ACCESS_TOKEN) {
+        // Check for Dropbox credentials
+        if (!env.DROPBOX_ACCESS_TOKEN && !env.DROPBOX_REFRESH_TOKEN) {
             return handleCors(request, new Response(JSON.stringify({
-                error: 'DROPBOX_ACCESS_TOKEN not configured'
+                error: 'No Dropbox credentials configured'
             }), {
                 status: 500,
                 headers: { 'Content-Type': 'application/json' }
@@ -239,7 +325,8 @@ export default {
         if (url.pathname === '/api/health') {
             return handleCors(request, new Response(JSON.stringify({
                 status: 'OK',
-                message: 'Luccas Portfolio API is running on Cloudflare Workers'
+                message: 'Luccas Portfolio API is running on Cloudflare Workers',
+                tokenType: env.DROPBOX_REFRESH_TOKEN ? 'refresh_token' : 'access_token'
             }), {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' }
@@ -256,7 +343,7 @@ export default {
                                    imageCache.overlayImages.length === 0;
                 
                 if (needsRefresh) {
-                    await refreshImageCache(env.DROPBOX_ACCESS_TOKEN);
+                    await refreshImageCache(env);
                 }
                 
                 // Return 2 random images (1 base + 1 overlay)
@@ -278,7 +365,7 @@ export default {
                 
                 console.log(`Serving random images: ${randomBaseImage.name} + ${randomOverlayImage.name}`);
                 
-                return handleCors(request, new Response(JSON.stringify({
+                const response = new Response(JSON.stringify({
                     baseImage: randomBaseImage,
                     overlayImage: randomOverlayImage,
                     totalCounts: {
@@ -287,8 +374,15 @@ export default {
                     }
                 }), {
                     status: 200,
-                    headers: { 'Content-Type': 'application/json' }
-                }));
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        // Add cache control headers to prevent aggressive reloading
+                        'Cache-Control': 'public, max-age=60, s-maxage=60',
+                        'Vary': 'Origin'
+                    }
+                });
+                
+                return handleCors(request, response);
                 
             } catch (error) {
                 console.error('Error fetching images:', error);
@@ -302,11 +396,147 @@ export default {
             }
         }
         
+        // Handle /api/sketchbooks endpoint
+        if (url.pathname === '/api/sketchbooks' && request.method === 'GET') {
+            try {
+                // Check for force refresh parameter
+                const forceRefresh = url.searchParams.get('refresh') === 'true';
+                
+                // Check if cache needs refresh
+                const needsRefresh = forceRefresh ||
+                                   !collectionsCache.sketchbooks.lastFetch || 
+                                   (Date.now() - collectionsCache.sketchbooks.lastFetch) > collectionsCache.cacheTimeout ||
+                                   collectionsCache.sketchbooks.images.length === 0;
+                
+                if (needsRefresh) {
+                    console.log('Cache expired or empty, fetching fresh sketchbooks images...');
+                    
+                    // Get all images from the Sketchbooks folder
+                    const sketchbookImages = await getAllImagesFromFolder(env, '/Sketchbooks');
+                    
+                    // Update cache
+                    collectionsCache.sketchbooks.images = sketchbookImages;
+                    collectionsCache.sketchbooks.lastFetch = Date.now();
+                    
+                    console.log(`Cached ${sketchbookImages.length} images in Sketchbooks folder`);
+                } else {
+                    console.log(`Serving ${collectionsCache.sketchbooks.images.length} cached sketchbooks images`);
+                }
+                
+                return handleCors(request, new Response(JSON.stringify({
+                    images: collectionsCache.sketchbooks.images,
+                    totalCount: collectionsCache.sketchbooks.images.length,
+                    cached: !needsRefresh
+                }), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' }
+                }));
+                
+            } catch (error) {
+                console.error('Error fetching sketchbooks:', error);
+                return handleCors(request, new Response(JSON.stringify({
+                    error: 'Failed to fetch sketchbooks',
+                    details: error.message
+                }), {
+                    status: 500,
+                    headers: { 'Content-Type': 'application/json' }
+                }));
+            }
+        }
+        
+        // Handle /api/paintings endpoint
+        if (url.pathname === '/api/paintings' && request.method === 'GET') {
+            try {
+                // Check if cache needs refresh
+                const needsRefresh = !collectionsCache.paintings.lastFetch || 
+                                   (Date.now() - collectionsCache.paintings.lastFetch) > collectionsCache.cacheTimeout ||
+                                   collectionsCache.paintings.images.length === 0;
+                
+                if (needsRefresh) {
+                    console.log('Cache expired or empty, fetching fresh paintings images...');
+                    
+                    // Get all images from the Paintings folder
+                    const paintingsImages = await getAllImagesFromFolder(env, '/Paintings');
+                    
+                    // Update cache
+                    collectionsCache.paintings.images = paintingsImages;
+                    collectionsCache.paintings.lastFetch = Date.now();
+                    
+                    console.log(`Cached ${paintingsImages.length} images in Paintings folder`);
+                } else {
+                    console.log(`Serving ${collectionsCache.paintings.images.length} cached paintings images`);
+                }
+                
+                return handleCors(request, new Response(JSON.stringify({
+                    images: collectionsCache.paintings.images,
+                    totalCount: collectionsCache.paintings.images.length,
+                    cached: !needsRefresh
+                }), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' }
+                }));
+                
+            } catch (error) {
+                console.error('Error fetching paintings:', error);
+                return handleCors(request, new Response(JSON.stringify({
+                    error: 'Failed to fetch paintings',
+                    details: error.message
+                }), {
+                    status: 500,
+                    headers: { 'Content-Type': 'application/json' }
+                }));
+            }
+        }
+        
+        // Handle /api/photo endpoint
+        if (url.pathname === '/api/photo' && request.method === 'GET') {
+            try {
+                // Check if cache needs refresh
+                const needsRefresh = !collectionsCache.photo.lastFetch || 
+                                   (Date.now() - collectionsCache.photo.lastFetch) > collectionsCache.cacheTimeout ||
+                                   collectionsCache.photo.images.length === 0;
+                
+                if (needsRefresh) {
+                    console.log('Cache expired or empty, fetching fresh photo images...');
+                    
+                    // Get all images from the Photo folder
+                    const photoImages = await getAllImagesFromFolder(env, '/Photo');
+                    
+                    // Update cache
+                    collectionsCache.photo.images = photoImages;
+                    collectionsCache.photo.lastFetch = Date.now();
+                    
+                    console.log(`Cached ${photoImages.length} images in Photo folder`);
+                } else {
+                    console.log(`Serving ${collectionsCache.photo.images.length} cached photo images`);
+                }
+                
+                return handleCors(request, new Response(JSON.stringify({
+                    images: collectionsCache.photo.images,
+                    totalCount: collectionsCache.photo.images.length,
+                    cached: !needsRefresh
+                }), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' }
+                }));
+                
+            } catch (error) {
+                console.error('Error fetching photo:', error);
+                return handleCors(request, new Response(JSON.stringify({
+                    error: 'Failed to fetch photo',
+                    details: error.message
+                }), {
+                    status: 500,
+                    headers: { 'Content-Type': 'application/json' }
+                }));
+            }
+        }
+        
         // Handle /api/debug endpoint for troubleshooting
         if (url.pathname === '/api/debug' && request.method === 'GET') {
             try {
                 // Test basic Dropbox connection
-                const testResponse = await dropboxApiCall('users/get_current_account', env.DROPBOX_ACCESS_TOKEN);
+                const testResponse = await dropboxApiCall('users/get_current_account', env);
                 
                 return handleCors(request, new Response(JSON.stringify({
                     dropboxConnected: true,
@@ -314,10 +544,30 @@ export default {
                         name: testResponse.name.display_name,
                         email: testResponse.email
                     },
+                    tokenInfo: {
+                        type: env.DROPBOX_REFRESH_TOKEN ? 'refresh_token' : 'access_token',
+                        tokenCached: !!tokenCache.accessToken,
+                        expiresAt: tokenCache.expiresAt,
+                        expiresIn: tokenCache.expiresAt ? Math.round((tokenCache.expiresAt - Date.now()) / 1000) : null
+                    },
                     cacheStatus: {
                         lastFetch: imageCache.lastFetch,
                         baseImagesCount: imageCache.baseImages.length,
                         overlayImagesCount: imageCache.overlayImages.length
+                    },
+                    collectionsCacheStatus: {
+                        sketchbooks: {
+                            lastFetch: collectionsCache.sketchbooks.lastFetch,
+                            imagesCount: collectionsCache.sketchbooks.images.length
+                        },
+                        paintings: {
+                            lastFetch: collectionsCache.paintings.lastFetch,
+                            imagesCount: collectionsCache.paintings.images.length
+                        },
+                        photo: {
+                            lastFetch: collectionsCache.photo.lastFetch,
+                            imagesCount: collectionsCache.photo.images.length
+                        }
                     }
                 }), {
                     status: 200,

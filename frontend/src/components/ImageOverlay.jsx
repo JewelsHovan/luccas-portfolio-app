@@ -1,9 +1,10 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import './ImageOverlay.css';
 
-const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = true }) => {
+const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = true, onRefresh = null }) => {
   const canvasRef = useRef(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const [settings, setSettings] = useState({
     opacity: 0.75,
     scale: 0.55,
@@ -11,28 +12,76 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
     position: 'center'
   });
 
-  const generateOverlay = async () => {
-    if (!baseImage || !overlayImage) return;
+  const loadImageWithRetry = useCallback(async (imageData, isBase = true) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous'; // Critical for CORS on mobile
+    
+    return new Promise((resolve, reject) => {
+      let attempts = 0;
+      const maxAttempts = 3;
+      
+      const tryLoad = () => {
+        const timeout = setTimeout(() => {
+          img.src = ''; // Cancel current load
+          if (attempts < maxAttempts) {
+            attempts++;
+            console.log(`Retrying ${isBase ? 'base' : 'overlay'} image (${attempts}/${maxAttempts})`);
+            setTimeout(tryLoad, 1000 * attempts); // Exponential backoff
+          } else {
+            reject(new Error(`Failed to load ${isBase ? 'base' : 'overlay'} image`));
+          }
+        }, 30000); // 30 second timeout for slow mobile networks
+        
+        img.onload = () => {
+          clearTimeout(timeout);
+          resolve(img);
+        };
+        
+        img.onerror = () => {
+          clearTimeout(timeout);
+          if (attempts < maxAttempts) {
+            attempts++;
+            console.log(`${isBase ? 'Base' : 'Overlay'} image error, retrying (${attempts}/${maxAttempts})`);
+            setTimeout(tryLoad, 1000 * attempts);
+          } else {
+            reject(new Error(`Failed to load ${isBase ? 'base' : 'overlay'} image`));
+          }
+        };
+        
+        // Add cache buster on retry to force fresh load
+        img.src = attempts > 0 
+          ? `${imageData.url}${imageData.url.includes('?') ? '&' : '?'}t=${Date.now()}`
+          : imageData.url;
+      };
+      
+      tryLoad();
+    });
+  }, []);
+
+  const generateOverlay = useCallback(async () => {
+    if (!baseImage || !overlayImage || !canvasRef.current) return;
 
     setIsGenerating(true);
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
+    
+    // Get context with performance hints
+    const ctx = canvas.getContext('2d', { 
+      alpha: false, // No transparency needed, improves performance
+      desynchronized: true // Allows async rendering
+    });
 
-    // Clear canvas with background color matching the design
+    // Clear canvas with background color
     ctx.fillStyle = '#c4b5b5';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     try {
-      // Load base image
-      const baseImg = new Image();
-      
-      await new Promise((resolve, reject) => {
-        baseImg.onload = resolve;
-        baseImg.onerror = () => reject(new Error('Failed to load base image'));
-        baseImg.src = baseImage.url;
-      });
+      // Load both images in parallel
+      const [baseImg, overlayImg] = await Promise.all([
+        loadImageWithRetry(baseImage, true),
+        loadImageWithRetry(overlayImage, false)
+      ]);
 
-      // Calculate how to fit base image in canvas (maintain aspect ratio)
+      // Calculate base image dimensions
       const baseAspectRatio = baseImg.width / baseImg.height;
       const canvasAspectRatio = canvas.width / canvas.height;
       
@@ -53,16 +102,7 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
       // Draw base image
       ctx.drawImage(baseImg, baseX, baseY, baseDrawWidth, baseDrawHeight);
 
-      // Load overlay image
-      const overlayImg = new Image();
-      
-      await new Promise((resolve, reject) => {
-        overlayImg.onload = resolve;
-        overlayImg.onerror = () => reject(new Error('Failed to load overlay image'));
-        overlayImg.src = overlayImage.url;
-      });
-
-      // Calculate overlay dimensions (smaller than base)
+      // Calculate overlay dimensions
       const maxOverlaySize = Math.min(canvas.width, canvas.height) * settings.scale;
       const overlayAspectRatio = overlayImg.width / overlayImg.height;
       
@@ -84,25 +124,42 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
       ctx.globalCompositeOperation = settings.blendMode;
       ctx.globalAlpha = settings.opacity;
 
-      // Draw overlay image centered
+      // Draw overlay image
       ctx.drawImage(overlayImg, overlayX, overlayY, overlayWidth, overlayHeight);
 
-      // Reset
+      // Reset context state
       ctx.globalCompositeOperation = 'source-over';
       ctx.globalAlpha = 1.0;
+      
+      // Reset retry count on success
+      setRetryCount(0);
 
     } catch (error) {
       console.error('Error generating overlay:', error);
+      
+      // Auto-retry on failure (up to 2 times)
+      if (retryCount < 2) {
+        setRetryCount(prev => prev + 1);
+        setTimeout(() => {
+          console.log('Auto-retrying image generation...');
+          generateOverlay();
+        }, 2000);
+      }
     } finally {
       setIsGenerating(false);
     }
-  };
+  }, [baseImage, overlayImage, settings, loadImageWithRetry, retryCount]);
 
   useEffect(() => {
-    if (baseImage && overlayImage) {
-      generateOverlay();
-    }
-  }, [baseImage, overlayImage]);
+    // Add small delay to ensure component is mounted
+    const timer = setTimeout(() => {
+      if (baseImage && overlayImage) {
+        generateOverlay();
+      }
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, [baseImage, overlayImage, generateOverlay]);
 
   const downloadImage = () => {
     const canvas = canvasRef.current;
@@ -112,18 +169,28 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
     link.click();
   };
 
+  // Adjust canvas size for mobile
+  const isMobile = window.innerWidth <= 768;
+  const canvasWidth = isMobile ? 800 : 1200;
+  const canvasHeight = isMobile ? 480 : 720;
+
   return (
     <div className="image-overlay">
       <div className="canvas-container">
         <canvas 
           ref={canvasRef} 
-          width={1200} 
-          height={720}
+          width={canvasWidth} 
+          height={canvasHeight}
           className="overlay-canvas"
+          onClick={onRefresh || generateOverlay}
+          style={{ cursor: isGenerating ? 'wait' : 'pointer' }}
         />
         {isGenerating && (
           <div className="loading-overlay">
             <div className="spinner"></div>
+            {retryCount > 0 && (
+              <p className="retry-message">Retrying... ({retryCount}/2)</p>
+            )}
           </div>
         )}
       </div>
