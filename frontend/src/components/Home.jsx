@@ -3,7 +3,7 @@ import ImageOverlay from './ImageOverlay';
 import { useImages } from '../hooks/useImages';
 
 const Home = () => {
-  const { images, loading, error, refetch, queueSize } = useImages();
+  const { images, loading, error, refetch } = useImages();
 
   if (loading) {
     return (
