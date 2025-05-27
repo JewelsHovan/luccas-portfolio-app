@@ -40,6 +40,11 @@ const Home = () => {
             showControls={false}
             onRefresh={refetch}
           />
+          <div className="artwork-info">
+            <p className="artwork-title"><em>Source-over</em></p>
+            <p className="artwork-date">2025-ongoing</p>
+            <p className="artwork-artists">Luccas Booth & Julien Hovan</p>
+          </div>
         </div>
       </main>
       <div className="copyright">©luccasbooth</div>

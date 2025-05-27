@@ -22,7 +22,7 @@ const Header = () => {
         </Link>
         
         {/* Desktop Navigation */}
-        <nav className="desktop-nav">
+        {/* <nav className="desktop-nav">
           <Link 
             to="/" 
             className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}
@@ -35,10 +35,10 @@ const Header = () => {
           >
             Collections
           </Link>
-        </nav>
+        </nav> */}
 
         {/* Mobile Hamburger Menu */}
-        <button 
+        {/* <button 
           className={`hamburger ${isMenuOpen ? 'open' : ''}`}
           onClick={toggleMenu}
           aria-label="Toggle menu"
@@ -46,11 +46,11 @@ const Header = () => {
           <span></span>
           <span></span>
           <span></span>
-        </button>
+        </button> */}
       </div>
 
       {/* Mobile Navigation */}
-      <nav className={`mobile-nav ${isMenuOpen ? 'open' : ''}`}>
+      {/* <nav className={`mobile-nav ${isMenuOpen ? 'open' : ''}`}>
         <Link 
           to="/" 
           className={`mobile-nav-link ${location.pathname === '/' ? 'active' : ''}`}
@@ -65,7 +65,7 @@ const Header = () => {
         >
           Collections
         </Link>
-      </nav>
+      </nav> */}
     </header>
   );
 };
