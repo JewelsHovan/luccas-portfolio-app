@@ -365,7 +365,7 @@ export default {
                 
                 console.log(`Serving random images: ${randomBaseImage.name} + ${randomOverlayImage.name}`);
                 
-                return handleCors(request, new Response(JSON.stringify({
+                const response = new Response(JSON.stringify({
                     baseImage: randomBaseImage,
                     overlayImage: randomOverlayImage,
                     totalCounts: {
@@ -374,8 +374,15 @@ export default {
                     }
                 }), {
                     status: 200,
-                    headers: { 'Content-Type': 'application/json' }
-                }));
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        // Add cache control headers to prevent aggressive reloading
+                        'Cache-Control': 'public, max-age=60, s-maxage=60',
+                        'Vary': 'Origin'
+                    }
+                });
+                
+                return handleCors(request, response);
                 
             } catch (error) {
                 console.error('Error fetching images:', error);

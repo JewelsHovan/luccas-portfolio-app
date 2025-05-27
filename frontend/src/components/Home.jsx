@@ -3,7 +3,7 @@ import ImageOverlay from './ImageOverlay';
 import { useImages } from '../hooks/useImages';
 
 const Home = () => {
-  const { images, loading, error, refetch } = useImages();
+  const { images, loading, error, refetch, queueSize } = useImages();
 
   if (loading) {
     return (
@@ -38,6 +38,7 @@ const Home = () => {
             baseImage={images.baseImage}
             overlayImage={images.overlayImage}
             showControls={false}
+            onRefresh={refetch}
           />
         </div>
       </main>
