@@ -8,9 +8,9 @@ const Home = () => {
   if (loading) {
     return (
       <main className="main-content">
-        <div className="loading-state">
-          <div className="spinner-large"></div>
-          <p>Loading images from Dropbox...</p>
+        <div className="artsy-loader">
+          <div className="artsy-spinner"></div>
+          <p className="artsy-loader-text">Loading artwork...</p>
         </div>
       </main>
     );
@@ -41,7 +41,7 @@ const Home = () => {
             onRefresh={refetch}
           />
           <div className="artwork-info">
-            <p className="artwork-title"><em>Source-over</em></p>
+            <p className="artwork-title"><em>source-over</em></p>
             <p className="artwork-date">2025-ongoing</p>
             <p className="artwork-artists">Luccas Booth & Julien Hovan</p>
           </div>

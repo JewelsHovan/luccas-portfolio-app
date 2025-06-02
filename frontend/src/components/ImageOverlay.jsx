@@ -3,8 +3,10 @@ import './ImageOverlay.css';
 
 const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = true, onRefresh = null }) => {
   const canvasRef = useRef(null);
+  const flashRef = useRef(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [isFlashing, setIsFlashing] = useState(false);
   const [settings, setSettings] = useState({
     opacity: 0.75,
     scale: 0.55,
@@ -190,22 +192,29 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
           width={canvasWidth} 
           height={canvasHeight}
           className="overlay-canvas"
-          onClick={() => {
+          onClick={async () => {
             if (!isGenerating && onRefresh) {
-              console.log('Canvas clicked, calling onRefresh');
+              console.log('Canvas clicked, triggering flash and refresh');
+              // Trigger flash animation
+              setIsFlashing(true);
+              
+              // Wait a moment for flash to be visible
+              await new Promise(resolve => setTimeout(resolve, 50));
+              
+              // Call refresh
               onRefresh();
+              
+              // Remove flash after animation completes
+              setTimeout(() => setIsFlashing(false), 300);
             }
           }}
           style={{ cursor: isGenerating ? 'wait' : 'pointer' }}
         />
-        {isGenerating && (
-          <div className="loading-overlay">
-            <div className="spinner"></div>
-            {retryCount > 0 && (
-              <p className="retry-message">Retrying... ({retryCount}/2)</p>
-            )}
-          </div>
-        )}
+        {/* Flash overlay */}
+        <div 
+          ref={flashRef}
+          className={`flash-overlay ${isFlashing ? 'active' : ''}`}
+        />
       </div>
       
       {showControls && (
