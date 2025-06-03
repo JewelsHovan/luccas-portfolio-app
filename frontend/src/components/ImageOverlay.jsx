@@ -72,8 +72,8 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
       desynchronized: true // Allows async rendering
     });
 
-    // Clear canvas with background color
-    ctx.fillStyle = '#c4b5b5';
+    // Clear canvas with white background 
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     try {
