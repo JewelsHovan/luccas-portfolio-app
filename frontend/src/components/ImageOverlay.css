@@ -164,3 +164,38 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* Flash transition effect */
+.flash-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: white;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease-out;
+  z-index: 999;
+}
+
+.flash-overlay.active {
+  opacity: 0.85;
+  transition: opacity 0.05s ease-in;
+}
+
+/* Alternative flash colors for variety */
+.flash-overlay.white {
+  background: white;
+}
+
+.flash-overlay.black {
+  background: black;
+}
+
+/* Mobile adjustments for flash */
+@media (max-width: 768px) {
+  .flash-overlay.active {
+    opacity: 0.75; /* Slightly less intense on mobile */
+  }
+}

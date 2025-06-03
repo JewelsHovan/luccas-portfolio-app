@@ -10,7 +10,7 @@ let imageCache = {
     baseImages: [],
     overlayImages: [],
     lastFetch: null,
-    cacheTimeout: 4 * 60 * 60 * 1000 // 4 hours (temp links expire)
+    cacheTimeout: 1 * 60 * 60 * 1000 // 1 hours (temp links expire)
 };
 
 // Cache for collections (sketchbooks, paintings, photo)
@@ -30,11 +30,10 @@ let collectionsCache = {
     cacheTimeout: 4 * 60 * 60 * 1000 // 4 hours (temp links expire)
 };
 
-// Recent selections to prevent duplicates
-let recentSelections = {
-    base: [],
-    overlay: [],
-    maxHistory: 10 // Prevent last 10 selections from repeating
+// Queue for unique image pairs
+let pairsQueue = {
+    queue: [],
+    currentIndex: 0
 };
 
 // Function to refresh access token
@@ -90,47 +89,75 @@ async function getValidAccessToken(env) {
     return await refreshAccessToken(env);
 }
 
-// Function to get random item from array
-function getRandomItem(array) {
-    return array[Math.floor(Math.random() * array.length)];
+// Function to shuffle array using Fisher-Yates algorithm
+function shuffleArray(array) {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
 }
 
-// Function to get random item excluding recent selections
-function getRandomItemExcluding(array, type) {
-    const excludeList = recentSelections[type];
-    const available = array.filter(item => 
-        !excludeList.some(excluded => excluded.path === item.path)
-    );
+// Function to generate one-to-one unique pairs
+function generateUniquePairs(baseImages, overlayImages) {
+    // Shuffle both arrays to ensure randomness
+    const shuffledBase = shuffleArray(baseImages);
+    const shuffledOverlay = shuffleArray(overlayImages);
     
-    console.log(`[${type}] Total: ${array.length}, Excluded: ${excludeList.length}, Available: ${available.length}`);
+    const pairs = [];
+    const maxPairs = Math.max(shuffledBase.length, shuffledOverlay.length);
     
-    // If we've excluded too many items (less than 20% available), reset
-    if (available.length === 0 || available.length < Math.max(1, Math.floor(array.length * 0.2))) {
-        console.log(`[${type}] Resetting history - too few available items`);
-        // Keep only the last 2 to avoid immediate repeats
-        recentSelections[type] = excludeList.slice(-2);
-        // Recalculate available
-        const newAvailable = array.filter(item => 
-            !recentSelections[type].some(excluded => excluded.path === item.path)
-        );
-        return getRandomItem(newAvailable.length > 0 ? newAvailable : array);
+    console.log(`Generating one-to-one pairs: ${shuffledBase.length} base images, ${shuffledOverlay.length} overlay images`);
+    
+    // Create one-to-one pairs, cycling through the shorter array if needed
+    for (let i = 0; i < maxPairs; i++) {
+        const baseIndex = i % shuffledBase.length;
+        const overlayIndex = i % shuffledOverlay.length;
+        
+        pairs.push({
+            baseImage: shuffledBase[baseIndex],
+            overlayImage: shuffledOverlay[overlayIndex]
+        });
     }
     
-    // Get random from available items
-    const selected = available[Math.floor(Math.random() * available.length)];
-    
-    // Add to recent selections
-    recentSelections[type].push(selected);
-    
-    // Dynamically adjust history size based on array size
-    const dynamicMaxHistory = Math.min(10, Math.floor(array.length * 0.5));
-    
-    // Keep only last N selections
-    if (recentSelections[type].length > dynamicMaxHistory) {
-        recentSelections[type].shift();
+    console.log(`Generated ${pairs.length} unique one-to-one pairs`);
+    return pairs;
+}
+
+// Function to initialize or refresh the pairs queue
+function refreshPairsQueue() {
+    if (imageCache.baseImages.length === 0 || imageCache.overlayImages.length === 0) {
+        console.log('Cannot refresh pairs queue - no images in cache');
+        return false;
     }
     
-    return selected;
+    console.log(`Generating new pairs queue from ${imageCache.baseImages.length} base images and ${imageCache.overlayImages.length} overlay images`);
+    
+    pairsQueue.queue = generateUniquePairs(imageCache.baseImages, imageCache.overlayImages);
+    pairsQueue.currentIndex = 0;
+    
+    console.log(`Created one-to-one pairs queue with ${pairsQueue.queue.length} unique pairs (each image appears once per cycle)`);
+    return true;
+}
+
+// Function to get next pair from queue
+function getNextPairFromQueue() {
+    // Check if we need to refresh the queue
+    if (pairsQueue.queue.length === 0 || pairsQueue.currentIndex >= pairsQueue.queue.length) {
+        console.log('Queue exhausted, refreshing...');
+        if (!refreshPairsQueue()) {
+            return null;
+        }
+    }
+    
+    // Get the next pair
+    const pair = pairsQueue.queue[pairsQueue.currentIndex];
+    pairsQueue.currentIndex++;
+    
+    console.log(`Returning pair ${pairsQueue.currentIndex}/${pairsQueue.queue.length}: ${pair.baseImage.name} + ${pair.overlayImage.name}`);
+    
+    return pair;
 }
 
 // Direct Dropbox API call using fetch with automatic token refresh
@@ -170,97 +197,115 @@ async function dropboxApiCall(endpoint, env, body = null, retryCount = 0) {
     return await response.json();
 }
 
-// Function to recursively get all images from a directory using direct API calls
+// Function to get all images from a directory using recursive listing and batch API
 async function getAllImagesFromFolder(env, folderPath) {
     const images = [];
+    const imagePaths = [];
     
-    async function scanFolder(path) {
-        try {
-            console.log(`Scanning folder: ${path}`);
-            
-            // List folder contents
-            let response = await dropboxApiCall('files/list_folder', env, {
-                path: path,
-                recursive: false,
-                include_deleted: false,
-                include_has_explicit_shared_members: false,
-                include_mounted_folders: true
-            });
-            
-            // Process entries
-            for (const entry of response.entries) {
+    try {
+        console.log(`Scanning folder recursively: ${folderPath}`);
+        
+        // List folder contents recursively
+        let response = await dropboxApiCall('files/list_folder', env, {
+            path: folderPath,
+            recursive: true,
+            include_deleted: false,
+            include_has_explicit_shared_members: false,
+            include_mounted_folders: false,
+            include_media_info: true
+        });
+        
+        // Collect all image file paths
+        const processEntries = (entries) => {
+            for (const entry of entries) {
                 if (entry['.tag'] === 'file') {
                     const name = entry.name.toLowerCase();
                     if (name.endsWith('.jpg') || name.endsWith('.jpeg') || 
                         name.endsWith('.png') || name.endsWith('.gif') || 
                         name.endsWith('.webp')) {
-                        
-                        try {
-                            // Get temporary link
-                            const tempLinkResponse = await dropboxApiCall('files/get_temporary_link', env, {
-                                path: entry.path_display
-                            });
-                            
-                            images.push({
-                                name: entry.name,
-                                url: tempLinkResponse.link,
-                                size: entry.size,
-                                path: entry.path_display
-                            });
-                            
-                            console.log(`Added image: ${entry.name}`);
-                        } catch (error) {
-                            console.error(`Error getting link for ${entry.name}:`, error.message);
-                        }
+                        imagePaths.push({
+                            path: entry.path_display,
+                            name: entry.name,
+                            size: entry.size
+                        });
                     }
-                } else if (entry['.tag'] === 'folder') {
-                    await scanFolder(entry.path_display);
                 }
             }
+        };
+        
+        processEntries(response.entries);
+        
+        // Handle pagination
+        while (response.has_more) {
+            response = await dropboxApiCall('files/list_folder/continue', env, {
+                cursor: response.cursor
+            });
+            processEntries(response.entries);
+        }
+        
+        console.log(`Found ${imagePaths.length} images in ${folderPath}`);
+        
+        // Get temporary links in batches (Dropbox batch API supports max 25 entries per batch)
+        const batchSize = 25;
+        for (let i = 0; i < imagePaths.length; i += batchSize) {
+            const batch = imagePaths.slice(i, i + batchSize);
+            const batchEntries = batch.map(item => ({
+                '.tag': 'get_temporary_link',
+                path: item.path
+            }));
             
-            // Handle pagination
-            while (response.has_more) {
-                response = await dropboxApiCall('files/list_folder/continue', env, {
-                    cursor: response.cursor
+            try {
+                console.log(`Getting temporary links for batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(imagePaths.length/batchSize)}`);
+                
+                const batchResponse = await dropboxApiCall('files/get_temporary_link_batch', env, {
+                    entries: batchEntries
                 });
                 
-                for (const entry of response.entries) {
-                    if (entry['.tag'] === 'file') {
-                        const name = entry.name.toLowerCase();
-                        if (name.endsWith('.jpg') || name.endsWith('.jpeg') || 
-                            name.endsWith('.png') || name.endsWith('.gif') || 
-                            name.endsWith('.webp')) {
-                            
-                            try {
-                                const tempLinkResponse = await dropboxApiCall('files/get_temporary_link', env, {
-                                    path: entry.path_display
-                                });
-                                
-                                images.push({
-                                    name: entry.name,
-                                    url: tempLinkResponse.link,
-                                    size: entry.size,
-                                    path: entry.path_display
-                                });
-                                
-                                console.log(`Added image: ${entry.name}`);
-                            } catch (error) {
-                                console.error(`Error getting link for ${entry.name}:`, error.message);
-                            }
-                        }
-                    } else if (entry['.tag'] === 'folder') {
-                        await scanFolder(entry.path_display);
+                // Process batch results
+                for (let j = 0; j < batchResponse.entries.length; j++) {
+                    const result = batchResponse.entries[j];
+                    const originalItem = batch[j];
+                    
+                    if (result['.tag'] === 'success') {
+                        images.push({
+                            name: originalItem.name,
+                            url: result.link,
+                            size: originalItem.size,
+                            path: originalItem.path
+                        });
+                    } else {
+                        console.error(`Failed to get link for ${originalItem.name}:`, result['.tag']);
+                    }
+                }
+            } catch (error) {
+                console.error(`Error in batch ${Math.floor(i/batchSize) + 1}:`, error.message);
+                // Fall back to individual requests for this batch
+                for (const item of batch) {
+                    try {
+                        const tempLinkResponse = await dropboxApiCall('files/get_temporary_link', env, {
+                            path: item.path
+                        });
+                        
+                        images.push({
+                            name: item.name,
+                            url: tempLinkResponse.link,
+                            size: item.size,
+                            path: item.path
+                        });
+                    } catch (linkError) {
+                        console.error(`Error getting link for ${item.name}:`, linkError.message);
                     }
                 }
             }
-        } catch (error) {
-            console.error(`Error scanning folder ${path}:`, error.message);
-            throw error;
         }
+        
+        console.log(`Successfully retrieved ${images.length} image links from ${folderPath}`);
+        return images;
+        
+    } catch (error) {
+        console.error(`Error scanning folder ${folderPath}:`, error.message);
+        throw error;
     }
-    
-    await scanFolder(folderPath);
-    return images;
 }
 
 // Function to refresh image cache
@@ -311,8 +356,65 @@ function handleCors(request, response) {
     return response;
 }
 
+// Helper functions for KV operations
+async function getCachedData(env, key) {
+    try {
+        const cached = await env.PORTFOLIO_KV.get(key);
+        if (cached) {
+            return JSON.parse(cached);
+        }
+    } catch (error) {
+        console.error(`Error reading from KV for key ${key}:`, error);
+    }
+    return null;
+}
+
+async function setCachedData(env, key, data, expirationTtl = 3600) {
+    try {
+        await env.PORTFOLIO_KV.put(key, JSON.stringify(data), {
+            expirationTtl: expirationTtl
+        });
+    } catch (error) {
+        console.error(`Error writing to KV for key ${key}:`, error);
+    }
+}
+
+// Function to refresh all caches and store in KV
+async function refreshAllCaches(env) {
+    console.log('Starting scheduled cache refresh...');
+    
+    try {
+        // Refresh image cache
+        await refreshImageCache(env);
+        await setCachedData(env, 'imageCache', imageCache, 3600);
+        
+        // Refresh collections caches
+        const collections = ['sketchbooks', 'paintings', 'photo'];
+        for (const collection of collections) {
+            const folderPath = `/${collection.charAt(0).toUpperCase() + collection.slice(1)}`;
+            const images = await getAllImagesFromFolder(env, folderPath);
+            collectionsCache[collection] = {
+                images: images,
+                lastFetch: Date.now()
+            };
+            await setCachedData(env, `collection_${collection}`, collectionsCache[collection], 14400);
+        }
+        
+        console.log('Scheduled cache refresh completed successfully');
+    } catch (error) {
+        console.error('Error in scheduled cache refresh:', error);
+        throw error;
+    }
+}
+
 // Main request handler
 export default {
+    // Scheduled handler for Cron triggers
+    async scheduled(event, env, ctx) {
+        // Refresh all caches on schedule
+        await refreshAllCaches(env);
+    },
+    
     async fetch(request, env, ctx) {
         const url = new URL(request.url);
         
@@ -346,17 +448,61 @@ export default {
         // Handle /api/images endpoint - returns all cached images
         if (url.pathname === '/api/images' && request.method === 'GET') {
             try {
-                // Check if cache needs refresh
-                const needsRefresh = !imageCache.lastFetch || 
-                                   (Date.now() - imageCache.lastFetch) > imageCache.cacheTimeout ||
-                                   imageCache.baseImages.length === 0 || 
-                                   imageCache.overlayImages.length === 0;
+                // First, try to get from KV cache
+                const kvCache = await getCachedData(env, 'imageCache');
                 
-                if (needsRefresh) {
-                    await refreshImageCache(env);
+                if (kvCache) {
+                    // We have KV cache! Check if it's stale
+                    const isStale = !kvCache.lastFetch || 
+                                   (Date.now() - kvCache.lastFetch) > (30 * 60 * 1000); // 30 minutes
+                    
+                    // Serve cached data immediately
+                    console.log(`Serving images from KV cache (stale: ${isStale})`);
+                    
+                    // If stale, refresh in background
+                    if (isStale) {
+                        ctx.waitUntil(
+                            (async () => {
+                                try {
+                                    await refreshImageCache(env);
+                                    await setCachedData(env, 'imageCache', imageCache, 3600);
+                                    console.log('Background cache refresh completed');
+                                } catch (error) {
+                                    console.error('Background cache refresh failed:', error);
+                                }
+                            })()
+                        );
+                    }
+                    
+                    // Return KV cached data immediately
+                    const response = new Response(JSON.stringify({
+                        baseImages: kvCache.baseImages || [],
+                        overlayImages: kvCache.overlayImages || [],
+                        totalCounts: {
+                            base: (kvCache.baseImages || []).length,
+                            overlay: (kvCache.overlayImages || []).length
+                        },
+                        cached: true,
+                        cacheAge: Date.now() - (kvCache.lastFetch || 0)
+                    }), {
+                        status: 200,
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Cache-Control': 'public, max-age=300', // 5 minute browser cache
+                            'X-Cache-Status': isStale ? 'stale' : 'fresh',
+                            'Vary': 'Origin'
+                        }
+                    });
+                    
+                    return handleCors(request, response);
                 }
                 
-                console.log(`Returning all images: ${imageCache.baseImages.length} base, ${imageCache.overlayImages.length} overlay`);
+                // No KV cache, need to fetch fresh data
+                console.log('No KV cache found, fetching fresh data');
+                await refreshImageCache(env);
+                
+                // Store in KV for next time
+                ctx.waitUntil(setCachedData(env, 'imageCache', imageCache, 3600));
                 
                 const response = new Response(JSON.stringify({
                     baseImages: imageCache.baseImages,
@@ -365,12 +511,13 @@ export default {
                         base: imageCache.baseImages.length,
                         overlay: imageCache.overlayImages.length
                     },
-                    cached: !needsRefresh
+                    cached: false
                 }), {
                     status: 200,
                     headers: { 
                         'Content-Type': 'application/json',
-                        'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
+                        'Cache-Control': 'public, max-age=300',
+                        'X-Cache-Status': 'miss',
                         'Vary': 'Origin'
                     }
                 });
@@ -389,12 +536,23 @@ export default {
             }
         }
         
-        // Handle /api/generateOverlay endpoint - returns 2 random images
+        // Handle /api/generateOverlay endpoint - returns next pair from queue
         if (url.pathname === '/api/generateOverlay' && request.method === 'GET') {
             try {
                 // Make sure cache is populated
                 if (imageCache.baseImages.length === 0 || imageCache.overlayImages.length === 0) {
-                    await refreshImageCache(env);
+                    // Try to load from KV first
+                    const kvCache = await getCachedData(env, 'imageCache');
+                    if (kvCache && kvCache.baseImages && kvCache.overlayImages) {
+                        console.log('Restoring image cache from KV');
+                        imageCache = kvCache;
+                        // Refresh queue with KV data
+                        refreshPairsQueue();
+                    } else {
+                        // No KV cache, need to fetch fresh
+                        await refreshImageCache(env);
+                        ctx.waitUntil(setCachedData(env, 'imageCache', imageCache, 3600));
+                    }
                 }
                 
                 if (imageCache.baseImages.length === 0 || imageCache.overlayImages.length === 0) {
@@ -406,15 +564,26 @@ export default {
                     }));
                 }
                 
-                // Simple random selection
-                const randomBaseImage = getRandomItem(imageCache.baseImages);
-                const randomOverlayImage = getRandomItem(imageCache.overlayImages);
+                // Get next pair from queue
+                const pair = getNextPairFromQueue();
                 
-                console.log(`[generateOverlay] ${randomBaseImage.name} + ${randomOverlayImage.name}`);
+                if (!pair) {
+                    return handleCors(request, new Response(JSON.stringify({
+                        error: 'Failed to get image pair from queue'
+                    }), {
+                        status: 500,
+                        headers: { 'Content-Type': 'application/json' }
+                    }));
+                }
                 
                 const response = new Response(JSON.stringify({
-                    baseImage: randomBaseImage,
-                    overlayImage: randomOverlayImage
+                    baseImage: pair.baseImage,
+                    overlayImage: pair.overlayImage,
+                    queueInfo: {
+                        currentPosition: pairsQueue.currentIndex,
+                        totalPairs: pairsQueue.queue.length,
+                        remainingPairs: pairsQueue.queue.length - pairsQueue.currentIndex
+                    }
                 }), {
                     status: 200,
                     headers: { 

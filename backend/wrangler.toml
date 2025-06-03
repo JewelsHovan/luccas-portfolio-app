@@ -3,7 +3,21 @@ main = "worker-fixed.js"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
+# KV Namespace binding
+[[kv_namespaces]]
+binding = "PORTFOLIO_KV"
+id = "3cd282c6ae3a4cdaa693be225bc35eb7" # Replace with actual KV namespace ID after creation
+
+# Cron trigger - runs every 30 minutes
+[triggers]
+crons = ["*/30 * * * *"]
+
 [env.production]
 name = "luccas-portfolio-backend"
+
+# Production KV namespace
+[[env.production.kv_namespaces]]
+binding = "PORTFOLIO_KV"
+id = "3318bd7a34954e8ebf36a9e3200fa129" # Replace with actual production KV namespace ID
 
 # Note: DROPBOX_ACCESS_TOKEN should be set via Cloudflare dashboard, not here
