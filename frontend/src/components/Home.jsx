@@ -41,7 +41,7 @@ const Home = () => {
             onRefresh={refetch}
           />
           <div className="artwork-info">
-            <p className="artwork-title"><em>source-over</em></p>
+            <p className="artwork-title"><em>'source-over'</em></p>
             <p className="artwork-date">2025-ongoing</p>
             <p className="artwork-artists">Luccas Booth & Julien Hovan</p>
           </div>
