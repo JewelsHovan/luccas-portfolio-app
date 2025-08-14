@@ -7,8 +7,10 @@ const Collections = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [expandedImageIndex, setExpandedImageIndex] = useState(null);
   const containerRef = useRef(null);
   const imageRefs = useRef([]);
+  const photoGridRef = useRef(null);
 
   // Fetch images from API
   useEffect(() => {
@@ -80,16 +82,34 @@ const Collections = () => {
   // Handle keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'ArrowDown' && currentIndex < images.length - 1) {
-        scrollToImage(currentIndex + 1);
-      } else if (e.key === 'ArrowUp' && currentIndex > 0) {
-        scrollToImage(currentIndex - 1);
+      // Handle photo grid full-screen close
+      if (selectedCollection === 'photo' && expandedImageIndex !== null) {
+        if (e.key === 'Escape') {
+          setExpandedImageIndex(null);
+        }
+      } 
+      // Handle photo grid horizontal scrolling with arrow keys
+      else if (selectedCollection === 'photo' && photoGridRef.current) {
+        const scrollAmount = 300; // pixels to scroll
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+          photoGridRef.current.scrollLeft += scrollAmount;
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+          photoGridRef.current.scrollLeft -= scrollAmount;
+        }
+      }
+      // Handle vertical scroll navigation for other collections
+      else if (selectedCollection !== 'photo') {
+        if (e.key === 'ArrowDown' && currentIndex < images.length - 1) {
+          scrollToImage(currentIndex + 1);
+        } else if (e.key === 'ArrowUp' && currentIndex > 0) {
+          scrollToImage(currentIndex - 1);
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentIndex, images.length]);
+  }, [currentIndex, images.length, selectedCollection, expandedImageIndex]);
 
   return (
     <div className="collections-page">
@@ -138,46 +158,99 @@ const Collections = () => {
       )}
 
       {selectedCollection && !loading && !error && (
-        <div 
-          className="collections-container" 
-          ref={containerRef}
-          onScroll={handleScroll}
-        >
-          {images.length === 0 ? (
-            <div className="no-images">
-              <p>No images found in this collection</p>
+        <>
+          {/* Photo collection - Grid with horizontal scroll */}
+          {selectedCollection === 'photo' ? (
+            <div className="photo-grid-container" ref={photoGridRef}>
+              {images.length === 0 ? (
+                <div className="no-images">
+                  <p>No images found in this collection</p>
+                </div>
+              ) : (
+                <div className="photo-grid">
+                  {images.map((image, index) => (
+                    <div 
+                      key={image.id || index} 
+                      className="photo-grid-item"
+                      onClick={() => setExpandedImageIndex(index)}
+                    >
+                      <img 
+                        src={image.url} 
+                        alt={image.name || `Photo ${index + 1}`}
+                        loading="lazy"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
-            <div className="images-scroll">
-              {images.map((image, index) => (
-                <div 
-                  key={image.id || index} 
-                  className={`image-container ${index === currentIndex ? 'active' : ''}`}
-                  ref={el => imageRefs.current[index] = el}
-                >
-                  <img 
-                    src={image.url} 
-                    alt={image.name || `Image ${index + 1}`}
-                    loading="lazy"
-                  />
-                  <div className="image-info">
-                    <p>{image.name || `Image ${index + 1}`}</p>
-                    <span>{index + 1} / {images.length}</span>
-                  </div>
+            /* Other collections - Vertical scroll layout */
+            <div 
+              className="collections-container" 
+              ref={containerRef}
+              onScroll={handleScroll}
+            >
+              {images.length === 0 ? (
+                <div className="no-images">
+                  <p>No images found in this collection</p>
                 </div>
-              ))}
+              ) : (
+                <div className="images-scroll">
+                  {images.map((image, index) => (
+                    <div 
+                      key={image.id || index} 
+                      className={`image-container ${index === currentIndex ? 'active' : ''}`}
+                      ref={el => imageRefs.current[index] = el}
+                    >
+                      <img 
+                        src={image.url} 
+                        alt={image.name || `Image ${index + 1}`}
+                        loading="lazy"
+                      />
+                      <div className="image-info">
+                        <p>{image.name || `Image ${index + 1}`}</p>
+                        <span>{index + 1} / {images.length}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </>
       )}
 
-      {/* Progress indicator */}
-      {selectedCollection && !loading && images.length > 0 && (
+      {/* Progress indicator - only for non-photo collections */}
+      {selectedCollection && selectedCollection !== 'photo' && !loading && images.length > 0 && (
         <div className="progress-indicator">
           <div 
             className="progress-bar" 
             style={{ width: `${((currentIndex + 1) / images.length) * 100}%` }}
           />
+        </div>
+      )}
+
+      {/* Full-screen overlay for photo collection */}
+      {selectedCollection === 'photo' && expandedImageIndex !== null && images[expandedImageIndex] && (
+        <div className="photo-overlay" onClick={() => setExpandedImageIndex(null)}>
+          <button 
+            className="photo-overlay-close" 
+            onClick={() => setExpandedImageIndex(null)}
+            aria-label="Close"
+          >
+            ×
+          </button>
+          
+          <div className="photo-overlay-content" onClick={(e) => e.stopPropagation()}>
+            <img 
+              src={images[expandedImageIndex].url} 
+              alt={images[expandedImageIndex].name || `Photo ${expandedImageIndex + 1}`}
+            />
+            <div className="photo-overlay-info">
+              <span>{expandedImageIndex + 1} / {images.length}</span>
+            </div>
+          </div>
         </div>
       )}
     </div>
