@@ -3,10 +3,12 @@ import './ImageOverlay.css';
 
 const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = true, onRefresh = null }) => {
   const canvasRef = useRef(null);
+  const containerRef = useRef(null);
   const flashRef = useRef(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const [isFlashing, setIsFlashing] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const [settings, setSettings] = useState({
     opacity: 0.75,
     scale: 0.55,
@@ -135,6 +137,10 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
       
       // Reset retry count on success
       setRetryCount(0);
+      
+      // Trigger scale-up transition
+      setIsTransitioning(true);
+      setTimeout(() => setIsTransitioning(false), 600);
 
     } catch (error) {
       console.error('Error generating overlay:', error);
@@ -186,12 +192,12 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
 
   return (
     <div className="image-overlay">
-      <div className="canvas-container">
+      <div className="canvas-container" ref={containerRef}>
         <canvas 
           ref={canvasRef} 
           width={canvasWidth} 
           height={canvasHeight}
-          className="overlay-canvas"
+          className={`overlay-canvas ${isTransitioning ? 'transitioning' : ''}`}
           onClick={async () => {
             if (!isGenerating && onRefresh) {
               console.log('Canvas clicked, triggering flash and refresh');
