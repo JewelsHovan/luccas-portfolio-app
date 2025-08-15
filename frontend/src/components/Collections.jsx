@@ -1,13 +1,95 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './Collections.css';
 
+// Helper function to calculate image saturation
+const calculateImageSaturation = (img) => {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Create a reasonably sized canvas for sampling
+    const maxSize = 100;
+    const scale = Math.min(maxSize / img.width, maxSize / img.height);
+    canvas.width = img.width * scale;
+    canvas.height = img.height * scale;
+    
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    
+    try {
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      
+      let totalSaturation = 0;
+      let pixelCount = 0;
+      
+      // Sample every 4th pixel for performance
+      for (let i = 0; i < data.length; i += 16) {
+        const r = data[i] / 255;
+        const g = data[i + 1] / 255;
+        const b = data[i + 2] / 255;
+        
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const delta = max - min;
+        
+        // Calculate saturation
+        if (max !== 0) {
+          const saturation = delta / max;
+          totalSaturation += saturation;
+          pixelCount++;
+        }
+      }
+      
+      const avgSaturation = pixelCount > 0 ? totalSaturation / pixelCount : 0;
+      resolve(avgSaturation);
+    } catch (error) {
+      console.warn('Could not analyze image:', error);
+      resolve(0.5); // Default middle value if analysis fails
+    }
+  });
+};
+
+// Helper function to get cached saturation or calculate new
+const getImageSaturation = async (imageUrl) => {
+  const cacheKey = `saturation_${imageUrl}`;
+  const cached = localStorage.getItem(cacheKey);
+  
+  if (cached !== null) {
+    return parseFloat(cached);
+  }
+  
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    
+    img.onload = async () => {
+      const saturation = await calculateImageSaturation(img);
+      try {
+        localStorage.setItem(cacheKey, saturation.toString());
+      } catch (e) {
+        console.warn('Could not cache saturation value:', e);
+      }
+      resolve(saturation);
+    };
+    
+    img.onerror = () => {
+      console.warn('Could not load image for analysis:', imageUrl);
+      resolve(0.5); // Default middle value
+    };
+    
+    img.src = imageUrl;
+  });
+};
+
 const Collections = () => {
   const [selectedCollection, setSelectedCollection] = useState('');
   const [images, setImages] = useState([]);
+  const [sortedImages, setSortedImages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [expandedImageIndex, setExpandedImageIndex] = useState(null);
+  const [sortingImages, setSortingImages] = useState(false);
   const containerRef = useRef(null);
   const imageRefs = useRef([]);
   const photoGridRef = useRef(null);
@@ -27,8 +109,16 @@ const Collections = () => {
         }
         
         const data = await response.json();
-        setImages(data.images || []);
+        const fetchedImages = data.images || [];
+        setImages(fetchedImages);
+        setSortedImages(fetchedImages); // Set initial unsorted images
         setCurrentIndex(0);
+        
+        // Sort images by saturation for photo collection
+        if (selectedCollection === 'photo' && fetchedImages.length > 0) {
+          setSortingImages(true);
+          sortImagesBySaturation(fetchedImages);
+        }
       } catch (err) {
         setError(err.message);
       } finally {
@@ -38,6 +128,28 @@ const Collections = () => {
 
     fetchImages();
   }, [selectedCollection]);
+
+  // Sort images by saturation
+  const sortImagesBySaturation = async (imagesToSort) => {
+    try {
+      // Calculate saturation for each image
+      const imagesWithSaturation = await Promise.all(
+        imagesToSort.map(async (image) => {
+          const saturation = await getImageSaturation(image.url);
+          return { ...image, saturation };
+        })
+      );
+      
+      // Sort from low saturation (B&W) to high saturation (colorful)
+      const sorted = [...imagesWithSaturation].sort((a, b) => a.saturation - b.saturation);
+      setSortedImages(sorted);
+    } catch (error) {
+      console.error('Error sorting images:', error);
+      setSortedImages(imagesToSort); // Fallback to unsorted
+    } finally {
+      setSortingImages(false);
+    }
+  };
 
   // Handle scroll for endless scroll effect
   const handleScroll = useCallback(() => {
@@ -167,8 +279,14 @@ const Collections = () => {
                   <p>No images found in this collection</p>
                 </div>
               ) : (
-                <div className="photo-grid">
-                  {images.map((image, index) => (
+                <>
+                  {sortingImages && (
+                    <div className="sorting-indicator">
+                      <span>Organizing photos by color...</span>
+                    </div>
+                  )}
+                  <div className="photo-grid">
+                  {sortedImages.map((image, index) => (
                     <div 
                       key={image.id || index} 
                       className="photo-grid-item"
@@ -182,6 +300,7 @@ const Collections = () => {
                     </div>
                   ))}
                 </div>
+                </>
               )}
             </div>
           ) : (
@@ -232,7 +351,7 @@ const Collections = () => {
       )}
 
       {/* Full-screen overlay for photo collection */}
-      {selectedCollection === 'photo' && expandedImageIndex !== null && images[expandedImageIndex] && (
+      {selectedCollection === 'photo' && expandedImageIndex !== null && sortedImages[expandedImageIndex] && (
         <div className="photo-overlay" onClick={() => setExpandedImageIndex(null)}>
           <button 
             className="photo-overlay-close" 
@@ -244,12 +363,9 @@ const Collections = () => {
           
           <div className="photo-overlay-content" onClick={(e) => e.stopPropagation()}>
             <img 
-              src={images[expandedImageIndex].url} 
-              alt={images[expandedImageIndex].name || `Photo ${expandedImageIndex + 1}`}
+              src={sortedImages[expandedImageIndex].url} 
+              alt={sortedImages[expandedImageIndex].name || `Photo ${expandedImageIndex + 1}`}
             />
-            <div className="photo-overlay-info">
-              <span>{expandedImageIndex + 1} / {images.length}</span>
-            </div>
           </div>
         </div>
       )}
