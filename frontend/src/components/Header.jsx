@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import './Header.css';
 
-const Header = () => {
+const Header = ({ selectedCollection, setSelectedCollection }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
 
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
@@ -12,6 +13,15 @@ const Header = () => {
 
   const handleLinkClick = () => {
     setIsMenuOpen(false);
+  };
+
+  const handleCollectionClick = (collection) => {
+    if (location.pathname !== '/collections') {
+      navigate('/collections');
+    }
+    if (setSelectedCollection) {
+      setSelectedCollection(collection);
+    }
   };
 
   return (
@@ -22,20 +32,26 @@ const Header = () => {
         </Link>
         
         {/* Desktop Navigation */}
-        {/* <nav className="desktop-nav">
-          <Link 
-            to="/" 
-            className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}
+        <nav className="desktop-nav">
+          <button 
+            className={`nav-link ${location.pathname === '/collections' && selectedCollection === 'paintings' ? 'active' : ''}`}
+            onClick={() => handleCollectionClick('paintings')}
           >
-            Home
-          </Link>
-          <Link 
-            to="/collections" 
-            className={`nav-link ${location.pathname === '/collections' ? 'active' : ''}`}
+            Paintings
+          </button>
+          <button 
+            className={`nav-link ${location.pathname === '/collections' && selectedCollection === 'photo' ? 'active' : ''}`}
+            onClick={() => handleCollectionClick('photo')}
           >
-            Collections
-          </Link>
-        </nav> */}
+            Photo
+          </button>
+          <button 
+            className={`nav-link ${location.pathname === '/collections' && selectedCollection === 'sketchbooks' ? 'active' : ''}`}
+            onClick={() => handleCollectionClick('sketchbooks')}
+          >
+            Sketchbooks
+          </button>
+        </nav>
 
         {/* Mobile Hamburger Menu */}
         {/* <button 

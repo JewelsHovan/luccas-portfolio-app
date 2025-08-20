@@ -1,66 +1,12 @@
 .collections-page {
   min-height: 100vh;
-  padding-top: 80px;
+  padding-top: 72px;
   background-color: #f8f8f8;
-}
-
-.collections-header {
-  position: fixed;
-  top: 72px;
-  left: 0;
-  right: 0;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-  z-index: 900;
-  padding: 20px;
-}
-
-.collections-nav {
-  display: flex;
-  gap: 40px;
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 0 40px;
-  justify-content: center;
-}
-
-.collection-link {
-  font-family: 'Courier New', monospace;
-  font-size: 16px;
-  font-weight: 400;
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  text-transform: capitalize;
-  color: #000;
-  transition: all 0.3s ease;
-  position: relative;
-  letter-spacing: 0.5px;
-}
-
-.collection-link:hover {
-  opacity: 0.7;
-}
-
-.collection-link.active {
-  color: #666;
-}
-
-.collection-link.active::after {
-  content: '';
-  position: absolute;
-  bottom: -5px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background-color: #000;
 }
 
 .collections-container {
   position: fixed;
-  top: 132px;
+  top: 72px;
   left: 0;
   right: 0;
   bottom: 20px;
@@ -274,7 +220,7 @@
 /* Photo Grid with Horizontal Scroll Styles */
 .photo-grid-container {
   position: fixed;
-  top: 132px;
+  top: 72px;
   left: 0;
   right: 0;
   bottom: 0;
@@ -424,23 +370,8 @@
 
 /* Mobile adjustments */
 @media (max-width: 768px) {
-  .collections-header {
-    top: 62px;
-    padding: 15px;
-  }
-
-  .collections-nav {
-    padding: 0 20px;
-    gap: 25px;
-    justify-content: center;
-  }
-
-  .collection-link {
-    font-size: 14px;
-  }
-
   .collections-container {
-    top: 115px;
+    top: 60px;
   }
 
   .image-container {
@@ -464,7 +395,7 @@
 
   /* Photo grid mobile adjustments */
   .photo-grid-container {
-    top: 115px;
+    top: 60px;
   }
 
   .photo-grid {

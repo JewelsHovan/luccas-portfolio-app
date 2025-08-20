@@ -14,9 +14,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  max-width: 900px;
   width: 100%;
-  margin: 0 auto;
   padding: 0 40px;
 }
 
@@ -36,32 +34,39 @@
 /* Desktop Navigation */
 .desktop-nav {
   display: flex;
-  gap: 30px;
+  gap: 40px;
   align-items: center;
 }
 
 .nav-link {
   font-family: 'Courier New', monospace;
-  font-size: 14px;
-  text-decoration: none;
+  font-size: 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
   color: #000;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  transition: opacity 0.3s ease;
+  letter-spacing: 0.5px;
+  text-transform: capitalize;
+  transition: all 0.3s ease;
   position: relative;
+  padding: 0;
 }
 
 .nav-link:hover {
   opacity: 0.7;
 }
 
+.nav-link.active {
+  color: #666;
+}
+
 .nav-link.active::after {
   content: '';
   position: absolute;
-  bottom: -2px;
+  bottom: -5px;
   left: 0;
   right: 0;
-  height: 1px;
+  height: 2px;
   background-color: #000;
 }
 
@@ -155,7 +160,6 @@
   }
   
   .header-content {
-    max-width: 100%;
     padding: 0 20px;
   }
   
@@ -165,7 +169,11 @@
   }
   
   .desktop-nav {
-    display: none;
+    gap: 20px;
+  }
+  
+  .nav-link {
+    font-size: 14px;
   }
   
   .hamburger {

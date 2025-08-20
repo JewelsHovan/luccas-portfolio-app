@@ -81,8 +81,7 @@ const getImageSaturation = async (imageUrl) => {
   });
 };
 
-const Collections = () => {
-  const [selectedCollection, setSelectedCollection] = useState('');
+const Collections = ({ selectedCollection, setSelectedCollection }) => {
   const [images, setImages] = useState([]);
   const [sortedImages, setSortedImages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -225,29 +224,6 @@ const Collections = () => {
 
   return (
     <div className="collections-page">
-      <div className="collections-header">
-        <nav className="collections-nav">
-          <button 
-            className={`collection-link ${selectedCollection === 'paintings' ? 'active' : ''}`}
-            onClick={() => setSelectedCollection('paintings')}
-          >
-            Paintings
-          </button>
-          <button 
-            className={`collection-link ${selectedCollection === 'photo' ? 'active' : ''}`}
-            onClick={() => setSelectedCollection('photo')}
-          >
-            Photo
-          </button>
-          <button 
-            className={`collection-link ${selectedCollection === 'sketchbooks' ? 'active' : ''}`}
-            onClick={() => setSelectedCollection('sketchbooks')}
-          >
-            Sketchbooks
-          </button>
-        </nav>
-      </div>
-
       {!selectedCollection && (
         <div className="no-collection-selected">
           <p>Select a collection to view</p>
