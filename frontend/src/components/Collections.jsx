@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { API_BASE_URL } from '../services/api';
 import './Collections.css';
 
 // Helper function to calculate image saturation
@@ -50,18 +51,18 @@ const calculateImageSaturation = (img) => {
 };
 
 // Helper function to get cached saturation or calculate new
-const getImageSaturation = async (imageUrl) => {
-  const cacheKey = `saturation_${imageUrl}`;
+const getImageSaturation = async (imageUrl, stableKey) => {
+  const cacheKey = `saturation_${stableKey}`;
   const cached = localStorage.getItem(cacheKey);
-  
+
   if (cached !== null) {
     return parseFloat(cached);
   }
-  
+
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    
+
     img.onload = async () => {
       const saturation = await calculateImageSaturation(img);
       try {
@@ -71,12 +72,12 @@ const getImageSaturation = async (imageUrl) => {
       }
       resolve(saturation);
     };
-    
+
     img.onerror = () => {
-      console.warn('Could not load image for analysis:', imageUrl);
+      console.warn('Could not load image for analysis:', stableKey);
       resolve(0.5); // Default middle value
     };
-    
+
     img.src = imageUrl;
   });
 };
@@ -101,7 +102,7 @@ const Collections = ({ selectedCollection, setSelectedCollection }) => {
       try {
         setLoading(true);
         setError(null);
-        const response = await fetch(`https://luccas-portfolio-backend.julienh15.workers.dev/api/${selectedCollection}`);
+        const response = await fetch(`${API_BASE_URL}/api/${selectedCollection}`);
         
         if (!response.ok) {
           throw new Error('Failed to fetch images');
@@ -128,19 +129,25 @@ const Collections = ({ selectedCollection, setSelectedCollection }) => {
     fetchImages();
   }, [selectedCollection]);
 
-  // Sort images by saturation
+  // Sort images by saturation (with concurrency limit to avoid mobile OOM)
   const sortImagesBySaturation = async (imagesToSort) => {
     try {
-      // Calculate saturation for each image
-      const imagesWithSaturation = await Promise.all(
-        imagesToSort.map(async (image) => {
-          const saturation = await getImageSaturation(image.url);
-          return { ...image, saturation };
-        })
-      );
-      
+      const concurrencyLimit = 4;
+      const imagesWithSaturation = [];
+
+      for (let i = 0; i < imagesToSort.length; i += concurrencyLimit) {
+        const batch = imagesToSort.slice(i, i + concurrencyLimit);
+        const batchResults = await Promise.all(
+          batch.map(async (image) => {
+            const saturation = await getImageSaturation(image.url, image.path || image.name);
+            return { ...image, saturation };
+          })
+        );
+        imagesWithSaturation.push(...batchResults);
+      }
+
       // Sort from low saturation (B&W) to high saturation (colorful)
-      const sorted = [...imagesWithSaturation].sort((a, b) => a.saturation - b.saturation);
+      const sorted = imagesWithSaturation.sort((a, b) => a.saturation - b.saturation);
       setSortedImages(sorted);
     } catch (error) {
       console.error('Error sorting images:', error);
@@ -303,10 +310,6 @@ const Collections = ({ selectedCollection, setSelectedCollection }) => {
                         alt={image.name || `Image ${index + 1}`}
                         loading="lazy"
                       />
-                      <div className="image-info">
-                        <p>{image.name || `Image ${index + 1}`}</p>
-                        <span>{index + 1} / {images.length}</span>
-                      </div>
                     </div>
                   ))}
                 </div>

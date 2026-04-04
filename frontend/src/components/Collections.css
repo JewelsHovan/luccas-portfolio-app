@@ -58,7 +58,7 @@
 
 .image-container img {
   max-width: 85%;
-  max-height: 75vh;
+  max-height: 80vh;
   width: auto;
   height: auto;
   object-fit: contain;
@@ -68,30 +68,6 @@
 
 .image-container.active img {
   transform: scale(1.02);
-}
-
-.image-info {
-  margin-top: 20px;
-  text-align: center;
-  opacity: 0;
-  transition: opacity 0.5s ease;
-}
-
-.image-container.active .image-info {
-  opacity: 1;
-}
-
-.image-info p {
-  font-family: 'Courier New', monospace;
-  font-size: 14px;
-  margin: 0 0 5px 0;
-  letter-spacing: 0.5px;
-}
-
-.image-info span {
-  font-family: 'Courier New', monospace;
-  font-size: 12px;
-  color: #666;
 }
 
 /* Progress indicator */
@@ -382,15 +358,7 @@
 
   .image-container img {
     max-width: 95%;
-    max-height: 65vh;
-  }
-
-  .image-info p {
-    font-size: 12px;
-  }
-
-  .image-info span {
-    font-size: 10px;
+    max-height: 70vh;
   }
 
   /* Photo grid mobile adjustments */

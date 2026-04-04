@@ -333,26 +333,35 @@ async function refreshImageCache(env) {
 function handleCors(request, response) {
     const origin = request.headers.get('Origin');
     const allowedOrigins = [
-        'https://luccas-portfolio.com', 
-        'http://localhost:3000', 
+        'https://luccas-portfolio.com',
+        'http://localhost:3000',
         'http://localhost:3001',
         'http://localhost:5173'
     ];
-    
+
+    let isAllowed = false;
+
     if (allowedOrigins.includes(origin)) {
-        response.headers.set('Access-Control-Allow-Origin', origin);
-    } else if (origin && (origin.includes('luccas-portfolio') || origin.includes('pages.dev'))) {
-        // Allow any subdomain of luccas-portfolio or Cloudflare Pages
-        response.headers.set('Access-Control-Allow-Origin', origin);
-    } else {
-        // For development, allow all origins
-        response.headers.set('Access-Control-Allow-Origin', '*');
+        isAllowed = true;
+    } else if (origin) {
+        try {
+            const hostname = new URL(origin).hostname;
+            isAllowed = hostname === 'luccas-portfolio.com' ||
+                        hostname.endsWith('.luccas-portfolio.com') ||
+                        hostname.endsWith('.pages.dev');
+        } catch (e) {
+            // Invalid origin URL
+        }
     }
-    
+
+    if (isAllowed) {
+        response.headers.set('Access-Control-Allow-Origin', origin);
+    }
+
     response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
     response.headers.set('Access-Control-Max-Age', '86400');
-    
+
     return response;
 }
 
@@ -437,8 +446,7 @@ export default {
         if (url.pathname === '/api/health') {
             return handleCors(request, new Response(JSON.stringify({
                 status: 'OK',
-                message: 'Luccas Portfolio API is running on Cloudflare Workers',
-                tokenType: env.DROPBOX_REFRESH_TOKEN ? 'refresh_token' : 'access_token'
+                message: 'Luccas Portfolio API is running on Cloudflare Workers'
             }), {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' }
@@ -527,8 +535,7 @@ export default {
             } catch (error) {
                 console.error('Error fetching images:', error);
                 return handleCors(request, new Response(JSON.stringify({
-                    error: 'Failed to fetch images',
-                    details: error.message
+                    error: 'Failed to fetch images'
                 }), {
                     status: 500,
                     headers: { 'Content-Type': 'application/json' }
@@ -599,8 +606,7 @@ export default {
             } catch (error) {
                 console.error('Error generating overlay:', error);
                 return handleCors(request, new Response(JSON.stringify({
-                    error: 'Failed to generate overlay',
-                    details: error.message
+                    error: 'Failed to generate overlay'
                 }), {
                     status: 500,
                     headers: { 'Content-Type': 'application/json' }
@@ -647,8 +653,7 @@ export default {
             } catch (error) {
                 console.error('Error fetching sketchbooks:', error);
                 return handleCors(request, new Response(JSON.stringify({
-                    error: 'Failed to fetch sketchbooks',
-                    details: error.message
+                    error: 'Failed to fetch sketchbooks'
                 }), {
                     status: 500,
                     headers: { 'Content-Type': 'application/json' }
@@ -691,8 +696,7 @@ export default {
             } catch (error) {
                 console.error('Error fetching paintings:', error);
                 return handleCors(request, new Response(JSON.stringify({
-                    error: 'Failed to fetch paintings',
-                    details: error.message
+                    error: 'Failed to fetch paintings'
                 }), {
                     status: 500,
                     headers: { 'Content-Type': 'application/json' }
@@ -735,60 +739,7 @@ export default {
             } catch (error) {
                 console.error('Error fetching photo:', error);
                 return handleCors(request, new Response(JSON.stringify({
-                    error: 'Failed to fetch photo',
-                    details: error.message
-                }), {
-                    status: 500,
-                    headers: { 'Content-Type': 'application/json' }
-                }));
-            }
-        }
-        
-        // Handle /api/debug endpoint for troubleshooting
-        if (url.pathname === '/api/debug' && request.method === 'GET') {
-            try {
-                // Test basic Dropbox connection
-                const testResponse = await dropboxApiCall('users/get_current_account', env);
-                
-                return handleCors(request, new Response(JSON.stringify({
-                    dropboxConnected: true,
-                    accountInfo: {
-                        name: testResponse.name.display_name,
-                        email: testResponse.email
-                    },
-                    tokenInfo: {
-                        type: env.DROPBOX_REFRESH_TOKEN ? 'refresh_token' : 'access_token',
-                        tokenCached: !!tokenCache.accessToken,
-                        expiresAt: tokenCache.expiresAt,
-                        expiresIn: tokenCache.expiresAt ? Math.round((tokenCache.expiresAt - Date.now()) / 1000) : null
-                    },
-                    cacheStatus: {
-                        lastFetch: imageCache.lastFetch,
-                        baseImagesCount: imageCache.baseImages.length,
-                        overlayImagesCount: imageCache.overlayImages.length
-                    },
-                    collectionsCacheStatus: {
-                        sketchbooks: {
-                            lastFetch: collectionsCache.sketchbooks.lastFetch,
-                            imagesCount: collectionsCache.sketchbooks.images.length
-                        },
-                        paintings: {
-                            lastFetch: collectionsCache.paintings.lastFetch,
-                            imagesCount: collectionsCache.paintings.images.length
-                        },
-                        photo: {
-                            lastFetch: collectionsCache.photo.lastFetch,
-                            imagesCount: collectionsCache.photo.images.length
-                        }
-                    }
-                }), {
-                    status: 200,
-                    headers: { 'Content-Type': 'application/json' }
-                }));
-            } catch (error) {
-                return handleCors(request, new Response(JSON.stringify({
-                    dropboxConnected: false,
-                    error: error.message
+                    error: 'Failed to fetch photo'
                 }), {
                     status: 500,
                     headers: { 'Content-Type': 'application/json' }
