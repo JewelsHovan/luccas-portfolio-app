@@ -361,6 +361,9 @@ function handleCors(request, response) {
     response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
     response.headers.set('Access-Control-Max-Age', '86400');
+    response.headers.set('X-Content-Type-Options', 'nosniff');
+    response.headers.set('X-Frame-Options', 'DENY');
+    response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 
     return response;
 }
@@ -397,9 +400,9 @@ async function refreshAllCaches(env) {
         await refreshImageCache(env);
         await setCachedData(env, 'imageCache', imageCache, 3600);
         
-        // Refresh collections caches
+        // Refresh collections caches in parallel
         const collections = ['sketchbooks', 'paintings', 'photo'];
-        for (const collection of collections) {
+        await Promise.all(collections.map(async (collection) => {
             const folderPath = `/${collection.charAt(0).toUpperCase() + collection.slice(1)}`;
             const images = await getAllImagesFromFolder(env, folderPath);
             collectionsCache[collection] = {
@@ -407,7 +410,7 @@ async function refreshAllCaches(env) {
                 lastFetch: Date.now()
             };
             await setCachedData(env, `collection_${collection}`, collectionsCache[collection], 14400);
-        }
+        }));
         
         console.log('Scheduled cache refresh completed successfully');
     } catch (error) {
@@ -614,132 +617,46 @@ export default {
             }
         }
         
-        // Handle /api/sketchbooks endpoint
-        if (url.pathname === '/api/sketchbooks' && request.method === 'GET') {
+        // Collection endpoints
+        const collectionRoutes = {
+            '/api/sketchbooks': { name: 'sketchbooks', folder: '/Sketchbooks' },
+            '/api/paintings': { name: 'paintings', folder: '/Paintings' },
+            '/api/photo': { name: 'photo', folder: '/Photo' },
+        };
+
+        const collectionRoute = collectionRoutes[url.pathname];
+        if (collectionRoute && request.method === 'GET') {
             try {
-                // Check for force refresh parameter
+                const { name, folder } = collectionRoute;
+                const cache = collectionsCache[name];
                 const forceRefresh = url.searchParams.get('refresh') === 'true';
-                
-                // Check if cache needs refresh
+
                 const needsRefresh = forceRefresh ||
-                                   !collectionsCache.sketchbooks.lastFetch || 
-                                   (Date.now() - collectionsCache.sketchbooks.lastFetch) > collectionsCache.cacheTimeout ||
-                                   collectionsCache.sketchbooks.images.length === 0;
-                
+                                   !cache.lastFetch ||
+                                   (Date.now() - cache.lastFetch) > collectionsCache.cacheTimeout ||
+                                   cache.images.length === 0;
+
                 if (needsRefresh) {
-                    console.log('Cache expired or empty, fetching fresh sketchbooks images...');
-                    
-                    // Get all images from the Sketchbooks folder
-                    const sketchbookImages = await getAllImagesFromFolder(env, '/Sketchbooks');
-                    
-                    // Update cache
-                    collectionsCache.sketchbooks.images = sketchbookImages;
-                    collectionsCache.sketchbooks.lastFetch = Date.now();
-                    
-                    console.log(`Cached ${sketchbookImages.length} images in Sketchbooks folder`);
-                } else {
-                    console.log(`Serving ${collectionsCache.sketchbooks.images.length} cached sketchbooks images`);
+                    console.log(`Fetching fresh ${name} images...`);
+                    const images = await getAllImagesFromFolder(env, folder);
+                    cache.images = images;
+                    cache.lastFetch = Date.now();
+                    console.log(`Cached ${images.length} ${name} images`);
                 }
-                
+
                 return handleCors(request, new Response(JSON.stringify({
-                    images: collectionsCache.sketchbooks.images,
-                    totalCount: collectionsCache.sketchbooks.images.length,
+                    images: cache.images,
+                    totalCount: cache.images.length,
                     cached: !needsRefresh
                 }), {
                     status: 200,
                     headers: { 'Content-Type': 'application/json' }
                 }));
-                
+
             } catch (error) {
-                console.error('Error fetching sketchbooks:', error);
+                console.error(`Error fetching ${collectionRoute.name}:`, error);
                 return handleCors(request, new Response(JSON.stringify({
-                    error: 'Failed to fetch sketchbooks'
-                }), {
-                    status: 500,
-                    headers: { 'Content-Type': 'application/json' }
-                }));
-            }
-        }
-        
-        // Handle /api/paintings endpoint
-        if (url.pathname === '/api/paintings' && request.method === 'GET') {
-            try {
-                // Check if cache needs refresh
-                const needsRefresh = !collectionsCache.paintings.lastFetch || 
-                                   (Date.now() - collectionsCache.paintings.lastFetch) > collectionsCache.cacheTimeout ||
-                                   collectionsCache.paintings.images.length === 0;
-                
-                if (needsRefresh) {
-                    console.log('Cache expired or empty, fetching fresh paintings images...');
-                    
-                    // Get all images from the Paintings folder
-                    const paintingsImages = await getAllImagesFromFolder(env, '/Paintings');
-                    
-                    // Update cache
-                    collectionsCache.paintings.images = paintingsImages;
-                    collectionsCache.paintings.lastFetch = Date.now();
-                    
-                    console.log(`Cached ${paintingsImages.length} images in Paintings folder`);
-                } else {
-                    console.log(`Serving ${collectionsCache.paintings.images.length} cached paintings images`);
-                }
-                
-                return handleCors(request, new Response(JSON.stringify({
-                    images: collectionsCache.paintings.images,
-                    totalCount: collectionsCache.paintings.images.length,
-                    cached: !needsRefresh
-                }), {
-                    status: 200,
-                    headers: { 'Content-Type': 'application/json' }
-                }));
-                
-            } catch (error) {
-                console.error('Error fetching paintings:', error);
-                return handleCors(request, new Response(JSON.stringify({
-                    error: 'Failed to fetch paintings'
-                }), {
-                    status: 500,
-                    headers: { 'Content-Type': 'application/json' }
-                }));
-            }
-        }
-        
-        // Handle /api/photo endpoint
-        if (url.pathname === '/api/photo' && request.method === 'GET') {
-            try {
-                // Check if cache needs refresh
-                const needsRefresh = !collectionsCache.photo.lastFetch || 
-                                   (Date.now() - collectionsCache.photo.lastFetch) > collectionsCache.cacheTimeout ||
-                                   collectionsCache.photo.images.length === 0;
-                
-                if (needsRefresh) {
-                    console.log('Cache expired or empty, fetching fresh photo images...');
-                    
-                    // Get all images from the Photo folder
-                    const photoImages = await getAllImagesFromFolder(env, '/Photo');
-                    
-                    // Update cache
-                    collectionsCache.photo.images = photoImages;
-                    collectionsCache.photo.lastFetch = Date.now();
-                    
-                    console.log(`Cached ${photoImages.length} images in Photo folder`);
-                } else {
-                    console.log(`Serving ${collectionsCache.photo.images.length} cached photo images`);
-                }
-                
-                return handleCors(request, new Response(JSON.stringify({
-                    images: collectionsCache.photo.images,
-                    totalCount: collectionsCache.photo.images.length,
-                    cached: !needsRefresh
-                }), {
-                    status: 200,
-                    headers: { 'Content-Type': 'application/json' }
-                }));
-                
-            } catch (error) {
-                console.error('Error fetching photo:', error);
-                return handleCors(request, new Response(JSON.stringify({
-                    error: 'Failed to fetch photo'
+                    error: `Failed to fetch ${collectionRoute.name}`
                 }), {
                     status: 500,
                     headers: { 'Content-Type': 'application/json' }

@@ -91,81 +91,76 @@ function getNextPairFromQueue() {
     return pair;
 }
 
-// Function to recursively get all images from a directory
-async function getAllImagesFromFolder(folderPath) {
-    const images = [];
-    
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+
+function isImageFile(name) {
+    const lower = name.toLowerCase();
+    return IMAGE_EXTENSIONS.some(ext => lower.endsWith(ext));
+}
+
+// Recursively list all image paths from a Dropbox folder
+async function listImagePaths(folderPath) {
+    const imagePaths = [];
+
     async function scanFolder(path) {
         try {
-            const response = await dbx.filesListFolder({ path });
-            
-            for (const entry of response.result.entries) {
-                if (entry['.tag'] === 'file') {
-                    const name = entry.name.toLowerCase();
-                    if (name.endsWith('.jpg') || name.endsWith('.jpeg') || 
-                        name.endsWith('.png') || name.endsWith('.gif') || 
-                        name.endsWith('.webp')) {
-                        
-                        try {
-                            const tempLinkResponse = await dbx.filesGetTemporaryLink({ 
-                                path: entry.path_display 
-                            });
-                            
-                            images.push({
-                                name: entry.name,
-                                url: tempLinkResponse.result.link,
-                                size: entry.size,
-                                path: entry.path_display
-                            });
-                        } catch (error) {
-                            console.error(`Error getting link for ${entry.name}:`, error.message);
-                        }
+            let response = await dbx.filesListFolder({ path });
+
+            const processEntries = (entries) => {
+                for (const entry of entries) {
+                    if (entry['.tag'] === 'file' && isImageFile(entry.name)) {
+                        imagePaths.push({ name: entry.name, size: entry.size, path: entry.path_display });
+                    } else if (entry['.tag'] === 'folder') {
+                        // Queue subfolder for scanning (collected below)
                     }
-                } else if (entry['.tag'] === 'folder') {
-                    await scanFolder(entry.path_display);
                 }
+                return entries.filter(e => e['.tag'] === 'folder').map(e => e.path_display);
+            };
+
+            let subfolders = processEntries(response.result.entries);
+
+            while (response.result.has_more) {
+                response = await dbx.filesListFolderContinue({ cursor: response.result.cursor });
+                subfolders.push(...processEntries(response.result.entries));
             }
-            
-            // Handle pagination
-            if (response.result.has_more) {
-                let cursor = response.result.cursor;
-                while (cursor) {
-                    const moreResponse = await dbx.filesListFolderContinue({ cursor });
-                    for (const entry of moreResponse.result.entries) {
-                        if (entry['.tag'] === 'file') {
-                            const name = entry.name.toLowerCase();
-                            if (name.endsWith('.jpg') || name.endsWith('.jpeg') || 
-                                name.endsWith('.png') || name.endsWith('.gif') || 
-                                name.endsWith('.webp')) {
-                                
-                                try {
-                                    const tempLinkResponse = await dbx.filesGetTemporaryLink({ 
-                                        path: entry.path_display 
-                                    });
-                                    
-                                    images.push({
-                                        name: entry.name,
-                                        url: tempLinkResponse.result.link,
-                                        size: entry.size,
-                                        path: entry.path_display
-                                    });
-                                } catch (error) {
-                                    console.error(`Error getting link for ${entry.name}:`, error.message);
-                                }
-                            }
-                        } else if (entry['.tag'] === 'folder') {
-                            await scanFolder(entry.path_display);
-                        }
-                    }
-                    cursor = moreResponse.result.has_more ? moreResponse.result.cursor : null;
-                }
+
+            for (const sub of subfolders) {
+                await scanFolder(sub);
             }
         } catch (error) {
             console.error(`Error scanning folder ${path}:`, error.message);
         }
     }
-    
+
     await scanFolder(folderPath);
+    return imagePaths;
+}
+
+// Get temp links in parallel batches of 25
+async function getAllImagesFromFolder(folderPath) {
+    const imagePaths = await listImagePaths(folderPath);
+    console.log(`Found ${imagePaths.length} images in ${folderPath}`);
+
+    const images = [];
+    const batchSize = 25;
+
+    for (let i = 0; i < imagePaths.length; i += batchSize) {
+        const batch = imagePaths.slice(i, i + batchSize);
+        const results = await Promise.allSettled(
+            batch.map(async (item) => {
+                const resp = await dbx.filesGetTemporaryLink({ path: item.path });
+                return { name: item.name, url: resp.result.link, size: item.size, path: item.path };
+            })
+        );
+        for (const result of results) {
+            if (result.status === 'fulfilled') {
+                images.push(result.value);
+            } else {
+                console.error('Error getting temp link:', result.reason?.message);
+            }
+        }
+    }
+
     return images;
 }
 
