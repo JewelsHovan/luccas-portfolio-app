@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { Dropbox } from 'dropbox';
+import { isImageFile, shuffleArray, generateUniquePairs } from './lib/utils.js';
 dotenv.config();
 
 const app = express();
@@ -46,34 +47,6 @@ let pairsQueue = {
     currentIndex: 0
 };
 
-// Function to get random item from array
-function getRandomItem(array) {
-    return array[Math.floor(Math.random() * array.length)];
-}
-
-// Fisher-Yates shuffle
-function shuffleArray(array) {
-    const shuffled = [...array];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
-}
-
-function generateUniquePairs(baseImages, overlayImages) {
-    const shuffledBase = shuffleArray(baseImages);
-    const shuffledOverlay = shuffleArray(overlayImages);
-    const pairs = [];
-    const maxPairs = Math.max(shuffledBase.length, shuffledOverlay.length);
-    for (let i = 0; i < maxPairs; i++) {
-        pairs.push({
-            baseImage: shuffledBase[i % shuffledBase.length],
-            overlayImage: shuffledOverlay[i % shuffledOverlay.length]
-        });
-    }
-    return pairs;
-}
 
 function refreshPairsQueue() {
     if (imageCache.baseImages.length === 0 || imageCache.overlayImages.length === 0) return false;
@@ -89,13 +62,6 @@ function getNextPairFromQueue() {
     const pair = pairsQueue.queue[pairsQueue.currentIndex];
     pairsQueue.currentIndex++;
     return pair;
-}
-
-const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
-
-function isImageFile(name) {
-    const lower = name.toLowerCase();
-    return IMAGE_EXTENSIONS.some(ext => lower.endsWith(ext));
 }
 
 // Recursively list all image paths from a Dropbox folder

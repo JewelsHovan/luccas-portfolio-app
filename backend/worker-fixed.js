@@ -1,3 +1,5 @@
+import { shuffleArray, generateUniquePairs, isOriginAllowed, isImageFile } from './lib/utils.js';
+
 // Token management cache
 let tokenCache = {
     accessToken: null,
@@ -87,42 +89,6 @@ async function getValidAccessToken(env) {
 
     // Need to refresh the token
     return await refreshAccessToken(env);
-}
-
-// Function to shuffle array using Fisher-Yates algorithm
-function shuffleArray(array) {
-    const shuffled = [...array];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
-}
-
-// Function to generate one-to-one unique pairs
-function generateUniquePairs(baseImages, overlayImages) {
-    // Shuffle both arrays to ensure randomness
-    const shuffledBase = shuffleArray(baseImages);
-    const shuffledOverlay = shuffleArray(overlayImages);
-    
-    const pairs = [];
-    const maxPairs = Math.max(shuffledBase.length, shuffledOverlay.length);
-    
-    console.log(`Generating one-to-one pairs: ${shuffledBase.length} base images, ${shuffledOverlay.length} overlay images`);
-    
-    // Create one-to-one pairs, cycling through the shorter array if needed
-    for (let i = 0; i < maxPairs; i++) {
-        const baseIndex = i % shuffledBase.length;
-        const overlayIndex = i % shuffledOverlay.length;
-        
-        pairs.push({
-            baseImage: shuffledBase[baseIndex],
-            overlayImage: shuffledOverlay[overlayIndex]
-        });
-    }
-    
-    console.log(`Generated ${pairs.length} unique one-to-one pairs`);
-    return pairs;
 }
 
 // Function to initialize or refresh the pairs queue
@@ -218,17 +184,12 @@ async function getAllImagesFromFolder(env, folderPath) {
         // Collect all image file paths
         const processEntries = (entries) => {
             for (const entry of entries) {
-                if (entry['.tag'] === 'file') {
-                    const name = entry.name.toLowerCase();
-                    if (name.endsWith('.jpg') || name.endsWith('.jpeg') || 
-                        name.endsWith('.png') || name.endsWith('.gif') || 
-                        name.endsWith('.webp')) {
-                        imagePaths.push({
-                            path: entry.path_display,
-                            name: entry.name,
-                            size: entry.size
-                        });
-                    }
+                if (entry['.tag'] === 'file' && isImageFile(entry.name)) {
+                    imagePaths.push({
+                        path: entry.path_display,
+                        name: entry.name,
+                        size: entry.size
+                    });
                 }
             }
         };
@@ -332,29 +293,8 @@ async function refreshImageCache(env) {
 // Handle CORS headers
 function handleCors(request, response) {
     const origin = request.headers.get('Origin');
-    const allowedOrigins = [
-        'https://luccas-portfolio.com',
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'http://localhost:5173'
-    ];
 
-    let isAllowed = false;
-
-    if (allowedOrigins.includes(origin)) {
-        isAllowed = true;
-    } else if (origin) {
-        try {
-            const hostname = new URL(origin).hostname;
-            isAllowed = hostname === 'luccas-portfolio.com' ||
-                        hostname.endsWith('.luccas-portfolio.com') ||
-                        hostname.endsWith('.pages.dev');
-        } catch (e) {
-            // Invalid origin URL
-        }
-    }
-
-    if (isAllowed) {
+    if (isOriginAllowed(origin)) {
         response.headers.set('Access-Control-Allow-Origin', origin);
     }
 
