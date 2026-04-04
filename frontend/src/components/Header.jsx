@@ -1,19 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import './Header.css';
 
 const Header = ({ selectedCollection, setSelectedCollection }) => {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-
-  const toggleMenu = () => {
-    setIsMenuOpen(!isMenuOpen);
-  };
-
-  const handleLinkClick = () => {
-    setIsMenuOpen(false);
-  };
 
   const handleCollectionClick = (collection) => {
     if (location.pathname !== '/collections') {
@@ -53,35 +44,7 @@ const Header = ({ selectedCollection, setSelectedCollection }) => {
           </button>
         </nav>
 
-        {/* Mobile Hamburger Menu */}
-        {/* <button 
-          className={`hamburger ${isMenuOpen ? 'open' : ''}`}
-          onClick={toggleMenu}
-          aria-label="Toggle menu"
-        >
-          <span></span>
-          <span></span>
-          <span></span>
-        </button> */}
       </div>
-
-      {/* Mobile Navigation */}
-      {/* <nav className={`mobile-nav ${isMenuOpen ? 'open' : ''}`}>
-        <Link 
-          to="/" 
-          className={`mobile-nav-link ${location.pathname === '/' ? 'active' : ''}`}
-          onClick={handleLinkClick}
-        >
-          Home
-        </Link>
-        <Link 
-          to="/collections" 
-          className={`mobile-nav-link ${location.pathname === '/collections' ? 'active' : ''}`}
-          onClick={handleLinkClick}
-        >
-          Collections
-        </Link>
-      </nav> */}
     </header>
   );
 };

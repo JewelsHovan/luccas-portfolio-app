@@ -1,19 +1,24 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import './ImageOverlay.css';
 
+const OVERLAY_SETTINGS = {
+  opacity: 0.75,
+  scale: 0.55,
+  blendMode: 'source-over',
+};
+
 const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = true, onRefresh = null }) => {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const flashRef = useRef(null);
+  const retryCountRef = useRef(0);
+  const generateOverlayRef = useRef(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
   const [isFlashing, setIsFlashing] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [settings, setSettings] = useState({
-    opacity: 0.75,
-    scale: 0.55,
-    blendMode: 'source-over',
-    position: 'center'
+  const [canvasSize, setCanvasSize] = useState(() => {
+    const mobile = window.innerWidth <= 768;
+    return { width: mobile ? 800 : 1200, height: mobile ? 480 : 720 };
   });
 
   const loadImageWithRetry = useCallback(async (imageData, isBase = true) => {
@@ -107,7 +112,7 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
       ctx.drawImage(baseImg, baseX, baseY, baseDrawWidth, baseDrawHeight);
 
       // Calculate overlay dimensions
-      const maxOverlaySize = Math.min(canvas.width, canvas.height) * settings.scale;
+      const maxOverlaySize = Math.min(canvas.width, canvas.height) * OVERLAY_SETTINGS.scale;
       const overlayAspectRatio = overlayImg.width / overlayImg.height;
       
       let overlayWidth, overlayHeight;
@@ -125,8 +130,8 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
       const overlayY = (canvas.height - overlayHeight) / 2;
 
       // Apply blend mode and opacity
-      ctx.globalCompositeOperation = settings.blendMode;
-      ctx.globalAlpha = settings.opacity;
+      ctx.globalCompositeOperation = OVERLAY_SETTINGS.blendMode;
+      ctx.globalAlpha = OVERLAY_SETTINGS.opacity;
 
       // Draw overlay image
       ctx.drawImage(overlayImg, overlayX, overlayY, overlayWidth, overlayHeight);
@@ -136,7 +141,7 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
       ctx.globalAlpha = 1.0;
       
       // Reset retry count on success
-      setRetryCount(0);
+      retryCountRef.current = 0;
       
       // Trigger scale-up transition
       setIsTransitioning(true);
@@ -146,36 +151,38 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
       console.error('Error generating overlay:', error);
       
       // Auto-retry on failure (up to 2 times)
-      if (retryCount < 2) {
-        setRetryCount(prev => prev + 1);
+      if (retryCountRef.current < 2) {
+        retryCountRef.current++;
         setTimeout(() => {
           console.log('Auto-retrying image generation...');
-          generateOverlay();
+          generateOverlayRef.current();
         }, 2000);
       }
     } finally {
       setIsGenerating(false);
     }
-  }, [baseImage, overlayImage, settings, loadImageWithRetry, retryCount]);
+  }, [baseImage, overlayImage, loadImageWithRetry]);
+
+  generateOverlayRef.current = generateOverlay;
 
   useEffect(() => {
     if (!baseImage || !overlayImage) return;
-    
-    console.log('ImageOverlay effect triggered:', {
-      base: baseImage.name,
-      overlay: overlayImage.name
-    });
-    
-    // Only generate if not already generating
-    if (!isGenerating) {
-      // Add small delay to ensure component is mounted
-      const timer = setTimeout(() => {
-        generateOverlay();
-      }, 100);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [baseImage?.url, overlayImage?.url]); // Use URLs as dependencies
+
+    const timer = setTimeout(() => {
+      generateOverlayRef.current();
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [baseImage?.url, overlayImage?.url]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth <= 768;
+      setCanvasSize({ width: mobile ? 800 : 1200, height: mobile ? 480 : 720 });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const downloadImage = () => {
     const canvas = canvasRef.current;
@@ -185,18 +192,13 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
     link.click();
   };
 
-  // Adjust canvas size for mobile
-  const isMobile = window.innerWidth <= 768;
-  const canvasWidth = isMobile ? 800 : 1200;
-  const canvasHeight = isMobile ? 480 : 720;
-
   return (
     <div className="image-overlay">
       <div className="canvas-container" ref={containerRef}>
         <canvas 
           ref={canvasRef} 
-          width={canvasWidth} 
-          height={canvasHeight}
+          width={canvasSize.width}
+          height={canvasSize.height}
           className={`overlay-canvas ${isTransitioning ? 'transitioning' : ''}`}
           onClick={async () => {
             if (!isGenerating && onRefresh) {

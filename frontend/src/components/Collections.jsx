@@ -93,10 +93,12 @@ const Collections = ({ selectedCollection, setSelectedCollection }) => {
   const containerRef = useRef(null);
   const imageRefs = useRef([]);
   const photoGridRef = useRef(null);
+  const scrollRafRef = useRef(null);
 
   // Fetch images from API
   useEffect(() => {
     if (!selectedCollection) return;
+    imageRefs.current = [];
 
     const fetchImages = async () => {
       try {
@@ -157,35 +159,33 @@ const Collections = ({ selectedCollection, setSelectedCollection }) => {
     }
   };
 
-  // Handle scroll for endless scroll effect
+  // Handle scroll with rAF throttle to avoid layout thrashing
   const handleScroll = useCallback(() => {
-    if (!containerRef.current || images.length === 0) return;
+    if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      if (!containerRef.current || images.length === 0) return;
 
-    const container = containerRef.current;
-    const scrollTop = container.scrollTop;
-    const containerHeight = container.clientHeight;
+      const container = containerRef.current;
+      const containerHeight = container.clientHeight;
 
-    // Find which image is currently most visible
-    let newIndex = 0;
-    for (let i = 0; i < imageRefs.current.length; i++) {
-      const imageEl = imageRefs.current[i];
-      if (!imageEl) continue;
+      let newIndex = 0;
+      for (let i = 0; i < imageRefs.current.length; i++) {
+        const imageEl = imageRefs.current[i];
+        if (!imageEl) continue;
 
-      const rect = imageEl.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      const imageTop = rect.top - containerRect.top;
-      const imageBottom = rect.bottom - containerRect.top;
-      
-      // Check if image center is in the viewport
-      const imageCenter = (imageTop + imageBottom) / 2;
-      if (imageCenter >= 0 && imageCenter <= containerHeight) {
-        newIndex = i;
-        break;
+        const rect = imageEl.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const imageCenter = (rect.top + rect.bottom) / 2 - containerRect.top;
+        if (imageCenter >= 0 && imageCenter <= containerHeight) {
+          newIndex = i;
+          break;
+        }
       }
-    }
 
-    setCurrentIndex(newIndex);
-  }, [images]);
+      setCurrentIndex(newIndex);
+    });
+  }, [images.length]);
 
   // Scroll to specific image
   const scrollToImage = (index) => {
@@ -270,8 +270,8 @@ const Collections = ({ selectedCollection, setSelectedCollection }) => {
                   )}
                   <div className="photo-grid">
                   {sortedImages.map((image, index) => (
-                    <div 
-                      key={image.id || index} 
+                    <div
+                      key={image.path || image.name}
                       className="photo-grid-item"
                       onClick={() => setExpandedImageIndex(index)}
                     >
@@ -300,8 +300,8 @@ const Collections = ({ selectedCollection, setSelectedCollection }) => {
               ) : (
                 <div className="images-scroll">
                   {images.map((image, index) => (
-                    <div 
-                      key={image.id || index} 
+                    <div
+                      key={image.path || image.name}
                       className={`image-container ${index === currentIndex ? 'active' : ''}`}
                       ref={el => imageRefs.current[index] = el}
                     >
