@@ -16,10 +16,7 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
   const [isGenerating, setIsGenerating] = useState(false);
   const [isFlashing, setIsFlashing] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [canvasSize, setCanvasSize] = useState(() => {
-    const mobile = window.innerWidth <= 768;
-    return { width: mobile ? 800 : 1200, height: mobile ? 480 : 720 };
-  });
+  const [canvasSize, setCanvasSize] = useState({ width: 1200, height: 720 });
 
   const loadImageWithRetry = useCallback(async (imageData, isBase = true) => {
     const img = new Image();
@@ -90,26 +87,22 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
         loadImageWithRetry(overlayImage, false)
       ]);
 
-      // Calculate base image dimensions
+      // Resize canvas to match base image aspect ratio
+      const maxWidth = window.innerWidth <= 768 ? 800 : 1200;
       const baseAspectRatio = baseImg.width / baseImg.height;
-      const canvasAspectRatio = canvas.width / canvas.height;
-      
-      let baseDrawWidth, baseDrawHeight, baseX, baseY;
-      
-      if (baseAspectRatio > canvasAspectRatio) {
-        baseDrawWidth = canvas.width;
-        baseDrawHeight = canvas.width / baseAspectRatio;
-        baseX = 0;
-        baseY = (canvas.height - baseDrawHeight) / 2;
-      } else {
-        baseDrawHeight = canvas.height;
-        baseDrawWidth = canvas.height * baseAspectRatio;
-        baseX = (canvas.width - baseDrawWidth) / 2;
-        baseY = 0;
-      }
-      
-      // Draw base image
-      ctx.drawImage(baseImg, baseX, baseY, baseDrawWidth, baseDrawHeight);
+      const newWidth = maxWidth;
+      const newHeight = Math.round(maxWidth / baseAspectRatio);
+
+      canvas.width = newWidth;
+      canvas.height = newHeight;
+      setCanvasSize({ width: newWidth, height: newHeight });
+
+      // Redraw white background after resize
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, newWidth, newHeight);
+
+      // Draw base image filling the entire canvas
+      ctx.drawImage(baseImg, 0, 0, newWidth, newHeight);
 
       // Calculate overlay dimensions
       const maxOverlaySize = Math.min(canvas.width, canvas.height) * OVERLAY_SETTINGS.scale;
@@ -177,12 +170,14 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
 
   useEffect(() => {
     const handleResize = () => {
-      const mobile = window.innerWidth <= 768;
-      setCanvasSize({ width: mobile ? 800 : 1200, height: mobile ? 480 : 720 });
+      // Re-render with new max width on resize
+      if (baseImage && overlayImage) {
+        generateOverlayRef.current();
+      }
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [baseImage, overlayImage]);
 
   const downloadImage = () => {
     const canvas = canvasRef.current;
