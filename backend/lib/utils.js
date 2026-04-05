@@ -38,6 +38,7 @@ export function generateUniquePairs(baseImages, overlayImages) {
 export function isOriginAllowed(origin) {
     const allowedOrigins = [
         'https://luccas-portfolio.com',
+        'https://luccasbooth.com',
         'http://localhost:3000',
         'http://localhost:3001',
         'http://localhost:5173'
@@ -51,6 +52,8 @@ export function isOriginAllowed(origin) {
         const hostname = new URL(origin).hostname;
         return hostname === 'luccas-portfolio.com' ||
                hostname.endsWith('.luccas-portfolio.com') ||
+               hostname === 'luccasbooth.com' ||
+               hostname.endsWith('.luccasbooth.com') ||
                hostname.endsWith('.pages.dev');
     } catch (e) {
         return false;
