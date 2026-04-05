@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { Dropbox } from 'dropbox';
-import { isImageFile, shuffleArray, generateUniquePairs } from './lib/utils.js';
+import { isImageFile, shuffleArray, generateUniquePairs, isOriginAllowed } from './lib/utils.js';
 dotenv.config();
 
 const app = express();
@@ -17,7 +17,14 @@ if (!process.env.DROPBOX_ACCESS_TOKEN) {
 
 // Middleware
 app.use(cors({
-    origin: ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001']
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl)
+        if (!origin || isOriginAllowed(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    }
 }));
 
 // Initialize Dropbox client
@@ -30,7 +37,7 @@ let imageCache = {
     baseImages: [],
     overlayImages: [],
     lastFetch: null,
-    cacheTimeout: 4 * 60 * 60 * 1000 // 4 hours (temp links expire)
+    cacheTimeout: 2 * 60 * 60 * 1000 // 2 hours (well within Dropbox 4-hour temp link TTL)
 };
 
 // Cache for collections
@@ -144,6 +151,9 @@ async function refreshImageCache() {
     imageCache.lastFetch = Date.now();
     
     console.log(`Cached ${baseImages.length} base images and ${overlayImages.length} overlay images`);
+
+    // Refresh pairs queue with new image data
+    refreshPairsQueue();
 }
 
 // API Routes

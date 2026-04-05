@@ -338,7 +338,8 @@ async function refreshAllCaches(env) {
     try {
         // Refresh image cache
         await refreshImageCache(env);
-        await setCachedData(env, 'imageCache', imageCache, 3600);
+        refreshPairsQueue();
+        await setCachedData(env, 'imageCache', imageCache, 7200);
         
         // Refresh collections caches in parallel
         const collections = ['sketchbooks', 'paintings', 'photo'];
