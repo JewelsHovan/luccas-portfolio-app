@@ -489,18 +489,25 @@ export default {
         // Handle /api/generateOverlay endpoint - returns next pair from queue
         if (url.pathname === '/api/generateOverlay' && request.method === 'GET') {
             try {
-                // Make sure cache is populated
-                if (imageCache.baseImages.length === 0 || imageCache.overlayImages.length === 0) {
+                // Make sure cache is populated and not stale
+                const cacheEmpty = imageCache.baseImages.length === 0 || imageCache.overlayImages.length === 0;
+                const cacheStale = imageCache.lastFetch && (Date.now() - imageCache.lastFetch) > imageCache.cacheTimeout;
+
+                if (cacheEmpty || cacheStale) {
                     // Try to load from KV first
                     const kvCache = await getCachedData(env, 'imageCache');
-                    if (kvCache && kvCache.baseImages && kvCache.overlayImages) {
+                    const kvFresh = kvCache && kvCache.baseImages && kvCache.overlayImages &&
+                                    kvCache.lastFetch && (Date.now() - kvCache.lastFetch) < imageCache.cacheTimeout;
+
+                    if (kvFresh) {
                         console.log('Restoring image cache from KV');
                         imageCache = kvCache;
-                        // Refresh queue with KV data
                         refreshPairsQueue();
                     } else {
-                        // No KV cache, need to fetch fresh
+                        // KV cache missing or also stale, fetch fresh from Dropbox
+                        console.log('Cache stale or missing, fetching fresh from Dropbox');
                         await refreshImageCache(env);
+                        refreshPairsQueue();
                         ctx.waitUntil(setCachedData(env, 'imageCache', imageCache, 3600));
                     }
                 }
