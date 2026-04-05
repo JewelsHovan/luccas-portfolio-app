@@ -1,0 +1,49 @@
+.floating-glyphs {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  overflow: hidden;
+}
+
+.floating-glyph {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  color: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+  user-select: none;
+  animation: glyph-drift var(--drift-duration) ease-in-out infinite alternate;
+  line-height: 1;
+}
+
+.floating-glyph.visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.floating-glyph:hover {
+  color: rgba(0, 0, 0, 0.5);
+  transform: scale(1.15);
+}
+
+.floating-glyph:active {
+  transform: scale(0.9);
+}
+
+@keyframes glyph-drift {
+  0% {
+    translate: 0 0;
+  }
+  100% {
+    translate: var(--drift-x) var(--drift-y);
+  }
+}
+
+@media (max-width: 768px) {
+  .floating-glyph {
+    color: rgba(0, 0, 0, 0.3);
+  }
+}

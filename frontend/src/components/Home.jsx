@@ -1,5 +1,6 @@
 import React from 'react';
 import ImageOverlay from './ImageOverlay';
+import FloatingGlyphs from './FloatingGlyphs';
 import { useImages } from '../hooks/useImages';
 
 const Home = () => {
@@ -47,6 +48,7 @@ const Home = () => {
           </div>
         </div>
       </main>
+      <FloatingGlyphs />
       <div className="copyright">©luccasbooth</div>
     </>
   );
