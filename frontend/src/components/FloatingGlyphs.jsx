@@ -28,10 +28,10 @@ function pickRandom(arr, exclude) {
 function buildGrid(count) {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const isMobile = vw <= 768;
+  const isMobile = Math.min(vw, vh) <= 768;
 
   // Safe bounds in pixels — avoid header and bottom copyright
-  const topPx = isMobile ? 75 : 105; // header height + buffer
+  const topPx = isMobile ? 80 : 100; // match main-content padding-top
   const bottomPx = 55; // copyright area
   const sidePx = GLYPH_PADDING_PX;
 
@@ -97,9 +97,9 @@ function createGlyphInCell(id, cell, excludeChar) {
 function createGlyphAnywhere(id, existingGlyphs, excludeChar) {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const isMobile = vw <= 768;
+  const isMobile = Math.min(vw, vh) <= 768;
 
-  const topPx = isMobile ? 75 : 105;
+  const topPx = isMobile ? 80 : 100;
   const bottomPx = 55;
   const sidePx = GLYPH_PADDING_PX;
   const minDist = Math.min(vw, vh) * 0.12;
@@ -146,6 +146,41 @@ const FloatingGlyphs = () => {
     const initial = cells.map((cell, i) => createGlyphInCell(i, cell, null));
     nextId.current = count;
     setGlyphs(initial);
+  }, []);
+
+  // Reposition glyphs on resize / orientation change
+  useEffect(() => {
+    let resizeTimer;
+    const handleResize = () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        setGlyphs(prev => {
+          const count = prev.length;
+          if (count === 0) return prev;
+          const cells = buildGrid(count);
+          return prev.map((g, i) => {
+            if (i < cells.length) {
+              const cell = cells[i];
+              const pad = 10;
+              const x = randomInRange(cell.xMin + pad, cell.xMax - pad);
+              const y = randomInRange(cell.yMin + pad, cell.yMax - pad);
+              const onCanvas = isOverCanvas(x, y);
+              return { ...g, x, y, onCanvas };
+            }
+            return g;
+          });
+        });
+      }, 150);
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+
+    return () => {
+      clearTimeout(resizeTimer);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
   }, []);
 
   const handleClick = useCallback((clickedId) => {

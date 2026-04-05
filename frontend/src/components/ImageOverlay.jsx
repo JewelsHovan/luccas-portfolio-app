@@ -13,9 +13,13 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
   const flashRef = useRef(null);
   const retryCountRef = useRef(0);
   const generateOverlayRef = useRef(null);
+  const baseImgRef = useRef(null);
+  const overlayImgRef = useRef(null);
+  const resizeTimerRef = useRef(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isFlashing, setIsFlashing] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [canvasReady, setCanvasReady] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 1200, height: 720 });
 
   const loadImageWithRetry = useCallback(async (imageData, isBase = true) => {
@@ -68,17 +72,13 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
     if (!baseImage || !overlayImage || !canvasRef.current) return;
 
     setIsGenerating(true);
+    setCanvasReady(false);
     const canvas = canvasRef.current;
-    
+
     // Get context with performance hints
-    const ctx = canvas.getContext('2d', { 
-      alpha: false, // No transparency needed, improves performance
+    const ctx = canvas.getContext('2d', {
       desynchronized: true // Allows async rendering
     });
-
-    // Clear canvas with white background 
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     try {
       // Load both images in parallel
@@ -88,7 +88,9 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
       ]);
 
       // Resize canvas to match base image aspect ratio
-      const maxWidth = window.innerWidth <= 768 ? 800 : 1200;
+      // Use the smaller dimension to detect mobile — prevents landscape phones from jumping to desktop size
+      const isMobile = Math.min(window.innerWidth, window.innerHeight) <= 768;
+      const maxWidth = isMobile ? 800 : 1200;
       const baseAspectRatio = baseImg.width / baseImg.height;
       const newWidth = maxWidth;
       const newHeight = Math.round(maxWidth / baseAspectRatio);
@@ -132,10 +134,16 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
       // Reset context state
       ctx.globalCompositeOperation = 'source-over';
       ctx.globalAlpha = 1.0;
-      
+
+      // Cache loaded images for resize redraws
+      baseImgRef.current = baseImg;
+      overlayImgRef.current = overlayImg;
+
       // Reset retry count on success
       retryCountRef.current = 0;
-      
+
+      setCanvasReady(true);
+
       // Trigger scale-up transition
       setIsTransitioning(true);
       setTimeout(() => setIsTransitioning(false), 600);
@@ -158,26 +166,74 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
 
   generateOverlayRef.current = generateOverlay;
 
+  const redrawCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const baseImg = baseImgRef.current;
+    const overlayImg = overlayImgRef.current;
+    if (!canvas || !baseImg || !overlayImg) return;
+
+    const ctx = canvas.getContext('2d', { desynchronized: true });
+
+    const isMobile = Math.min(window.innerWidth, window.innerHeight) <= 768;
+    const maxWidth = isMobile ? 800 : 1200;
+    const baseAspectRatio = baseImg.width / baseImg.height;
+    const newWidth = maxWidth;
+    const newHeight = Math.round(maxWidth / baseAspectRatio);
+
+    canvas.width = newWidth;
+    canvas.height = newHeight;
+    setCanvasSize({ width: newWidth, height: newHeight });
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, newWidth, newHeight);
+    ctx.drawImage(baseImg, 0, 0, newWidth, newHeight);
+
+    const maxOverlaySize = Math.min(canvas.width, canvas.height) * OVERLAY_SETTINGS.scale;
+    const overlayAspectRatio = overlayImg.width / overlayImg.height;
+    let overlayWidth, overlayHeight;
+    if (overlayAspectRatio > 1) {
+      overlayWidth = maxOverlaySize;
+      overlayHeight = maxOverlaySize / overlayAspectRatio;
+    } else {
+      overlayHeight = maxOverlaySize;
+      overlayWidth = maxOverlaySize * overlayAspectRatio;
+    }
+
+    const overlayX = (canvas.width - overlayWidth) / 2;
+    const overlayY = (canvas.height - overlayHeight) / 2;
+
+    ctx.globalCompositeOperation = OVERLAY_SETTINGS.blendMode;
+    ctx.globalAlpha = OVERLAY_SETTINGS.opacity;
+    ctx.drawImage(overlayImg, overlayX, overlayY, overlayWidth, overlayHeight);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1.0;
+  }, []);
+
   useEffect(() => {
     if (!baseImage || !overlayImage) return;
 
     const timer = setTimeout(() => {
       generateOverlayRef.current();
-    }, 100);
+    }, 0);
 
     return () => clearTimeout(timer);
   }, [baseImage?.url, overlayImage?.url]);
 
   useEffect(() => {
     const handleResize = () => {
-      // Re-render with new max width on resize
-      if (baseImage && overlayImage) {
-        generateOverlayRef.current();
-      }
+      if (resizeTimerRef.current) cancelAnimationFrame(resizeTimerRef.current);
+      resizeTimerRef.current = requestAnimationFrame(() => {
+        redrawCanvas();
+      });
     };
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [baseImage, overlayImage]);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+      if (resizeTimerRef.current) cancelAnimationFrame(resizeTimerRef.current);
+    };
+  }, [redrawCanvas]);
 
   const downloadImage = () => {
     const canvas = canvasRef.current;
@@ -190,8 +246,8 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
   return (
     <div className="image-overlay">
       <div className="canvas-container" ref={containerRef}>
-        <canvas 
-          ref={canvasRef} 
+        <canvas
+          ref={canvasRef}
           width={canvasSize.width}
           height={canvasSize.height}
           className={`overlay-canvas ${isTransitioning ? 'transitioning' : ''}`}
@@ -200,19 +256,24 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
               console.log('Canvas clicked, triggering flash and refresh');
               // Trigger flash animation
               setIsFlashing(true);
-              
+
               // Wait a moment for flash to be visible
               await new Promise(resolve => setTimeout(resolve, 50));
-              
+
               // Call refresh
               onRefresh();
-              
+
               // Remove flash after animation completes
               setTimeout(() => setIsFlashing(false), 300);
             }
           }}
-          style={{ cursor: isGenerating ? 'wait' : 'pointer' }}
+          style={{ visibility: canvasReady ? 'visible' : 'hidden', cursor: isGenerating ? 'wait' : 'pointer' }}
         />
+        {!canvasReady && (
+          <div className="loading-overlay">
+            <div className="spinner"></div>
+          </div>
+        )}
         {/* Flash overlay */}
         <div 
           ref={flashRef}
