@@ -229,6 +229,28 @@ const Collections = ({ selectedCollection, setSelectedCollection }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentIndex, images.length, selectedCollection, expandedImageIndex]);
 
+  // Translate vertical mousewheel to horizontal scroll on photo grid
+  useEffect(() => {
+    if (selectedCollection !== 'photo') return;
+
+    const handleWheel = (e) => {
+      const container = photoGridRef.current;
+      if (!container) return;
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        e.preventDefault();
+        container.scrollLeft += e.deltaY;
+      }
+    };
+
+    // Disable body scroll when photo grid is active
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('wheel', handleWheel);
+    };
+  }, [selectedCollection]);
+
   return (
     <div className="collections-page">
       {!selectedCollection && (
