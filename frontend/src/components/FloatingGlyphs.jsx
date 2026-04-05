@@ -10,18 +10,7 @@ const GLYPHS = [
   '𓉵','𓈞','𓇸','𓇝'
 ];
 
-// Zones around the center canvas where glyphs can spawn
-// Expressed as percentage ranges [minX, maxX, minY, maxY]
-const SPAWN_ZONES = [
-  [2, 18, 10, 90],   // left strip
-  [82, 98, 10, 90],  // right strip
-  [18, 82, 8, 22],   // top strip (above canvas)
-  [18, 82, 82, 95],  // bottom strip (below canvas)
-];
-
-function getIsMobile() {
-  return window.innerWidth <= 768;
-}
+const GLYPH_PADDING_PX = 48; // keep glyphs this far from viewport edges
 
 function randomInRange(min, max) {
   return min + Math.random() * (max - min);
@@ -35,77 +24,142 @@ function pickRandom(arr, exclude) {
   return pick;
 }
 
-function generatePosition(existingPositions) {
-  const minDist = 12; // minimum percentage distance between glyphs
-  let attempts = 0;
+// Build a grid of cells across the safe area, pick one cell per glyph
+function buildGrid(count) {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const isMobile = vw <= 768;
 
-  while (attempts < 30) {
-    const zone = SPAWN_ZONES[Math.floor(Math.random() * SPAWN_ZONES.length)];
-    const x = randomInRange(zone[0], zone[1]);
-    const y = randomInRange(zone[2], zone[3]);
+  // Safe bounds in pixels — avoid header and bottom copyright
+  const topPx = isMobile ? 75 : 105; // header height + buffer
+  const bottomPx = 55; // copyright area
+  const sidePx = GLYPH_PADDING_PX;
 
-    const tooClose = existingPositions.some(
-      pos => Math.hypot(pos.x - x, pos.y - y) < minDist
-    );
+  const safeTop = topPx;
+  const safeBottom = vh - bottomPx;
+  const safeLeft = sidePx;
+  const safeRight = vw - sidePx;
 
-    if (!tooClose) return { x, y };
-    attempts++;
+  const safeW = safeRight - safeLeft;
+  const safeH = safeBottom - safeTop;
+
+  // Determine grid dimensions — aim for roughly square cells
+  // Use at least 3 cols and enough rows to have >= count cells
+  const cols = Math.max(3, Math.ceil(Math.sqrt(count * (safeW / safeH))));
+  const rows = Math.max(2, Math.ceil(count / cols));
+
+  const cellW = safeW / cols;
+  const cellH = safeH / rows;
+
+  const cells = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      cells.push({
+        xMin: safeLeft + c * cellW,
+        xMax: safeLeft + (c + 1) * cellW,
+        yMin: safeTop + r * cellH,
+        yMax: safeTop + (r + 1) * cellH,
+      });
+    }
   }
 
-  // Fallback: just pick a spot in a random zone
-  const zone = SPAWN_ZONES[Math.floor(Math.random() * SPAWN_ZONES.length)];
-  return { x: randomInRange(zone[0], zone[1]), y: randomInRange(zone[2], zone[3]) };
+  // Shuffle and pick `count` cells so glyphs spread across different areas
+  for (let i = cells.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [cells[i], cells[j]] = [cells[j], cells[i]];
+  }
+
+  return cells.slice(0, count);
 }
 
-function createGlyph(id, existingPositions, excludeChar) {
-  const pos = generatePosition(existingPositions);
+// Check if a pixel position overlaps the canvas element
+function isOverCanvas(xPx, yPx) {
+  const canvas = document.querySelector('.overlay-canvas');
+  if (!canvas) return false;
+  const rect = canvas.getBoundingClientRect();
+  return xPx >= rect.left && xPx <= rect.right && yPx >= rect.top && yPx <= rect.bottom;
+}
+
+function createGlyphInCell(id, cell, excludeChar) {
+  const padding = 10; // inner padding within cell
+  const x = randomInRange(cell.xMin + padding, cell.xMax - padding);
+  const y = randomInRange(cell.yMin + padding, cell.yMax - padding);
   const char = pickRandom(GLYPHS, excludeChar);
   const size = randomInRange(28, 42);
-  // Random subtle drift direction per glyph
   const driftX = randomInRange(-3, 3);
   const driftY = randomInRange(-3, 3);
   const driftDuration = randomInRange(16, 28);
+  const onCanvas = isOverCanvas(x, y);
 
-  return { id, char, x: pos.x, y: pos.y, size, driftX, driftY, driftDuration, visible: true };
+  return { id, char, x, y, size, driftX, driftY, driftDuration, onCanvas, visible: true };
 }
 
-function initGlyphs(count) {
-  const glyphs = [];
-  for (let i = 0; i < count; i++) {
-    const positions = glyphs.map(g => ({ x: g.x, y: g.y }));
-    glyphs.push(createGlyph(i, positions, null));
+function createGlyphAnywhere(id, existingGlyphs, excludeChar) {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const isMobile = vw <= 768;
+
+  const topPx = isMobile ? 75 : 105;
+  const bottomPx = 55;
+  const sidePx = GLYPH_PADDING_PX;
+  const minDist = Math.min(vw, vh) * 0.12;
+
+  let attempts = 0;
+  while (attempts < 40) {
+    const x = randomInRange(sidePx, vw - sidePx);
+    const y = randomInRange(topPx, vh - bottomPx);
+
+    const tooClose = existingGlyphs.some(
+      g => Math.hypot(g.x - x, g.y - y) < minDist
+    );
+
+    if (!tooClose) {
+      const char = pickRandom(GLYPHS, excludeChar);
+      const size = randomInRange(28, 42);
+      const driftX = randomInRange(-3, 3);
+      const driftY = randomInRange(-3, 3);
+      const driftDuration = randomInRange(16, 28);
+      const onCanvas = isOverCanvas(x, y);
+      return { id, char, x, y, size, driftX, driftY, driftDuration, onCanvas, visible: true };
+    }
+    attempts++;
   }
-  return glyphs;
+
+  // Fallback
+  const x = randomInRange(sidePx, vw - sidePx);
+  const y = randomInRange(topPx, vh - bottomPx);
+  const char = pickRandom(GLYPHS, excludeChar);
+  const onCanvas = isOverCanvas(x, y);
+  return {
+    id, char, x, y, size: 34, driftX: 0, driftY: 0,
+    driftDuration: 20, onCanvas, visible: true,
+  };
 }
 
 const FloatingGlyphs = () => {
   const nextId = useRef(0);
   const [glyphs, setGlyphs] = useState([]);
 
-  // Initialize on mount and handle resize
   useEffect(() => {
-    const count = Math.floor(Math.random() * 3) + 3;  // 3-5 on all devices
-
-    const initial = initGlyphs(count);
+    const count = Math.floor(Math.random() * 3) + 3; // 3-5
+    const cells = buildGrid(count);
+    const initial = cells.map((cell, i) => createGlyphInCell(i, cell, null));
     nextId.current = count;
     setGlyphs(initial);
   }, []);
 
   const handleClick = useCallback((clickedId) => {
-    // Fade out the clicked glyph
     setGlyphs(prev => prev.map(g =>
       g.id === clickedId ? { ...g, visible: false } : g
     ));
 
-    // After fade-out, respawn with new character and position
     setTimeout(() => {
       setGlyphs(prev => {
         const clicked = prev.find(g => g.id === clickedId);
         const others = prev.filter(g => g.id !== clickedId);
-        const positions = others.map(g => ({ x: g.x, y: g.y }));
-        const newGlyph = createGlyph(
+        const newGlyph = createGlyphAnywhere(
           nextId.current++,
-          positions,
+          others,
           clicked?.char
         );
         return [...others, newGlyph];
@@ -118,10 +172,10 @@ const FloatingGlyphs = () => {
       {glyphs.map(g => (
         <span
           key={g.id}
-          className={`floating-glyph ${g.visible ? 'visible' : ''}`}
+          className={`floating-glyph ${g.visible ? 'visible' : ''} ${g.onCanvas ? 'on-canvas' : ''}`}
           style={{
-            left: `${g.x}%`,
-            top: `${g.y}%`,
+            left: `${g.x}px`,
+            top: `${g.y}px`,
             fontSize: `${g.size}px`,
             '--drift-x': `${g.driftX}px`,
             '--drift-y': `${g.driftY}px`,
