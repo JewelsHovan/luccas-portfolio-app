@@ -1,61 +1,36 @@
-.floating-glyphs {
+.glyph-layer {
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 50;
 }
 
-.floating-glyph {
+.glyph-floater {
   position: absolute;
-  pointer-events: auto;
-  cursor: pointer;
-  color: rgba(0, 0, 0, 0.35);
+  font-family: 'Noto Sans Egyptian Hieroglyphs', serif;
+  color: var(--glyph-color, #999);
   opacity: 0;
-  transform: scale(0.8);
-  transition: opacity 0.35s ease, transform 0.35s ease, color 0.35s ease;
+  transition: opacity 0.4s ease;
   user-select: none;
-  animation: glyph-drift var(--drift-duration) ease-in-out infinite alternate;
-  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  animation: glyph-drift var(--dur, 8s) ease-in-out infinite alternate;
+  animation-delay: var(--delay, 0s);
+  will-change: transform, opacity;
 }
 
-.floating-glyph.visible {
-  opacity: 1;
-  transform: scale(1);
+.glyph-floater.visible {
+  opacity: var(--glyph-opacity, 0.85);
 }
 
-/* White variant when overlapping the canvas */
-.floating-glyph.on-canvas {
-  color: rgba(255, 255, 255, 0.45);
-}
-
-.floating-glyph:hover {
-  color: rgba(0, 0, 0, 0.5);
-  transform: scale(1.15);
-}
-
-.floating-glyph.on-canvas:hover {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.floating-glyph:active {
-  transform: scale(0.9);
+.glyph-floater.fading {
+  opacity: 0;
 }
 
 @keyframes glyph-drift {
-  0% {
-    translate: 0 0;
-  }
-  100% {
-    translate: var(--drift-x) var(--drift-y);
-  }
+  to { transform: translate(var(--dx, 0), var(--dy, 0)); }
 }
 
-@media (max-width: 768px) {
-  .floating-glyph {
-    color: rgba(0, 0, 0, 0.3);
-  }
-
-  .floating-glyph.on-canvas {
-    color: rgba(255, 255, 255, 0.4);
-  }
+@media (prefers-reduced-motion: reduce) {
+  .glyph-floater { animation: none; }
 }

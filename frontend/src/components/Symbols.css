@@ -1,0 +1,67 @@
+.symbols-page {
+  position: fixed;
+  top: 72px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #f8f8f8;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 48px 40px 40px;
+  box-sizing: border-box;
+}
+
+.symbols-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  align-items: start;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.symbols-panel {
+  display: flex;
+  justify-content: center;
+  gap: 56px;
+}
+
+.symbols-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.6;
+}
+
+.glyph {
+  font-family: 'Noto Sans Egyptian Hieroglyphs', serif;
+  font-size: 20px;
+  color: #333;
+  user-select: none;
+  display: block;
+  line-height: 1;
+}
+
+.glyph-rotated {
+  transform: rotate(90deg);
+}
+
+@media (max-width: 768px) {
+  .symbols-page {
+    top: 60px;
+    padding: 32px 20px 40px;
+  }
+
+  .symbols-grid {
+    grid-template-columns: 1fr;
+    gap: 60px;
+  }
+
+  .symbols-panel {
+    gap: 28px;
+  }
+
+  .glyph {
+    font-size: 16px;
+  }
+}

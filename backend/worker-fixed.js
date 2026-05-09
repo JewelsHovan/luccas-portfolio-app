@@ -1,5 +1,3 @@
-import { shuffleArray, generateUniquePairs, isOriginAllowed, isImageFile } from './lib/utils.js';
-
 // Token management cache
 let tokenCache = {
     accessToken: null,
@@ -15,22 +13,25 @@ let imageCache = {
     cacheTimeout: 1 * 60 * 60 * 1000 // 1 hours (temp links expire)
 };
 
-// Cache for collections (sketchbooks, paintings, photo)
+// Map of public collection slug → actual Dropbox folder path.
+// Slugs are what the frontend hits as /api/<slug>; folder paths reflect the
+// real Dropbox structure under the Luccas Booth account.
+const COLLECTION_PATHS = {
+    paintings:   '/Paintings',
+    photo:       '/Photo',
+    assemblage:  '/Assemblage',
+    drawings:    '/Drawings',
+    sketchbooks: '/Library/Sketchbooks',
+    j24:         '/Library/Books/J24’', // J24' uses a curly apostrophe
+};
+
+// Per-collection cache. Initialized lazily for each slug in COLLECTION_PATHS.
 let collectionsCache = {
-    sketchbooks: {
-        images: [],
-        lastFetch: null
-    },
-    paintings: {
-        images: [],
-        lastFetch: null
-    },
-    photo: {
-        images: [],
-        lastFetch: null
-    },
     cacheTimeout: 4 * 60 * 60 * 1000 // 4 hours (temp links expire)
 };
+for (const slug of Object.keys(COLLECTION_PATHS)) {
+    collectionsCache[slug] = { images: [], lastFetch: null };
+}
 
 // Queue for unique image pairs
 let pairsQueue = {
@@ -89,6 +90,42 @@ async function getValidAccessToken(env) {
 
     // Need to refresh the token
     return await refreshAccessToken(env);
+}
+
+// Function to shuffle array using Fisher-Yates algorithm
+function shuffleArray(array) {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+}
+
+// Function to generate one-to-one unique pairs
+function generateUniquePairs(baseImages, overlayImages) {
+    // Shuffle both arrays to ensure randomness
+    const shuffledBase = shuffleArray(baseImages);
+    const shuffledOverlay = shuffleArray(overlayImages);
+    
+    const pairs = [];
+    const maxPairs = Math.max(shuffledBase.length, shuffledOverlay.length);
+    
+    console.log(`Generating one-to-one pairs: ${shuffledBase.length} base images, ${shuffledOverlay.length} overlay images`);
+    
+    // Create one-to-one pairs, cycling through the shorter array if needed
+    for (let i = 0; i < maxPairs; i++) {
+        const baseIndex = i % shuffledBase.length;
+        const overlayIndex = i % shuffledOverlay.length;
+        
+        pairs.push({
+            baseImage: shuffledBase[baseIndex],
+            overlayImage: shuffledOverlay[overlayIndex]
+        });
+    }
+    
+    console.log(`Generated ${pairs.length} unique one-to-one pairs`);
+    return pairs;
 }
 
 // Function to initialize or refresh the pairs queue
@@ -184,12 +221,17 @@ async function getAllImagesFromFolder(env, folderPath) {
         // Collect all image file paths
         const processEntries = (entries) => {
             for (const entry of entries) {
-                if (entry['.tag'] === 'file' && isImageFile(entry.name)) {
-                    imagePaths.push({
-                        path: entry.path_display,
-                        name: entry.name,
-                        size: entry.size
-                    });
+                if (entry['.tag'] === 'file') {
+                    const name = entry.name.toLowerCase();
+                    if (name.endsWith('.jpg') || name.endsWith('.jpeg') || 
+                        name.endsWith('.png') || name.endsWith('.gif') || 
+                        name.endsWith('.webp')) {
+                        imagePaths.push({
+                            path: entry.path_display,
+                            name: entry.name,
+                            size: entry.size
+                        });
+                    }
                 }
             }
         };
@@ -293,18 +335,27 @@ async function refreshImageCache(env) {
 // Handle CORS headers
 function handleCors(request, response) {
     const origin = request.headers.get('Origin');
-
-    if (isOriginAllowed(origin)) {
+    const allowedOrigins = [
+        'https://luccas-portfolio.com', 
+        'http://localhost:3000', 
+        'http://localhost:3001',
+        'http://localhost:5173'
+    ];
+    
+    if (allowedOrigins.includes(origin)) {
         response.headers.set('Access-Control-Allow-Origin', origin);
+    } else if (origin && (origin.includes('luccas-portfolio') || origin.includes('pages.dev'))) {
+        // Allow any subdomain of luccas-portfolio or Cloudflare Pages
+        response.headers.set('Access-Control-Allow-Origin', origin);
+    } else {
+        // For development, allow all origins
+        response.headers.set('Access-Control-Allow-Origin', '*');
     }
-
+    
     response.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
     response.headers.set('Access-Control-Max-Age', '86400');
-    response.headers.set('X-Content-Type-Options', 'nosniff');
-    response.headers.set('X-Frame-Options', 'DENY');
-    response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-
+    
     return response;
 }
 
@@ -338,20 +389,17 @@ async function refreshAllCaches(env) {
     try {
         // Refresh image cache
         await refreshImageCache(env);
-        refreshPairsQueue();
-        await setCachedData(env, 'imageCache', imageCache, 7200);
+        await setCachedData(env, 'imageCache', imageCache, 3600);
         
-        // Refresh collections caches in parallel
-        const collections = ['sketchbooks', 'paintings', 'photo'];
-        await Promise.all(collections.map(async (collection) => {
-            const folderPath = `/${collection.charAt(0).toUpperCase() + collection.slice(1)}`;
+        // Refresh collections caches — iterate over the full COLLECTION_PATHS map
+        for (const [slug, folderPath] of Object.entries(COLLECTION_PATHS)) {
             const images = await getAllImagesFromFolder(env, folderPath);
-            collectionsCache[collection] = {
+            collectionsCache[slug] = {
                 images: images,
                 lastFetch: Date.now()
             };
-            await setCachedData(env, `collection_${collection}`, collectionsCache[collection], 14400);
-        }));
+            await setCachedData(env, `collection_${slug}`, collectionsCache[slug], 14400);
+        }
         
         console.log('Scheduled cache refresh completed successfully');
     } catch (error) {
@@ -390,7 +438,8 @@ export default {
         if (url.pathname === '/api/health') {
             return handleCors(request, new Response(JSON.stringify({
                 status: 'OK',
-                message: 'Luccas Portfolio API is running on Cloudflare Workers'
+                message: 'Luccas Portfolio API is running on Cloudflare Workers',
+                tokenType: env.DROPBOX_REFRESH_TOKEN ? 'refresh_token' : 'access_token'
             }), {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' }
@@ -479,7 +528,8 @@ export default {
             } catch (error) {
                 console.error('Error fetching images:', error);
                 return handleCors(request, new Response(JSON.stringify({
-                    error: 'Failed to fetch images'
+                    error: 'Failed to fetch images',
+                    details: error.message
                 }), {
                     status: 500,
                     headers: { 'Content-Type': 'application/json' }
@@ -490,25 +540,18 @@ export default {
         // Handle /api/generateOverlay endpoint - returns next pair from queue
         if (url.pathname === '/api/generateOverlay' && request.method === 'GET') {
             try {
-                // Make sure cache is populated and not stale
-                const cacheEmpty = imageCache.baseImages.length === 0 || imageCache.overlayImages.length === 0;
-                const cacheStale = imageCache.lastFetch && (Date.now() - imageCache.lastFetch) > imageCache.cacheTimeout;
-
-                if (cacheEmpty || cacheStale) {
+                // Make sure cache is populated
+                if (imageCache.baseImages.length === 0 || imageCache.overlayImages.length === 0) {
                     // Try to load from KV first
                     const kvCache = await getCachedData(env, 'imageCache');
-                    const kvFresh = kvCache && kvCache.baseImages && kvCache.overlayImages &&
-                                    kvCache.lastFetch && (Date.now() - kvCache.lastFetch) < imageCache.cacheTimeout;
-
-                    if (kvFresh) {
+                    if (kvCache && kvCache.baseImages && kvCache.overlayImages) {
                         console.log('Restoring image cache from KV');
                         imageCache = kvCache;
+                        // Refresh queue with KV data
                         refreshPairsQueue();
                     } else {
-                        // KV cache missing or also stale, fetch fresh from Dropbox
-                        console.log('Cache stale or missing, fetching fresh from Dropbox');
+                        // No KV cache, need to fetch fresh
                         await refreshImageCache(env);
-                        refreshPairsQueue();
                         ctx.waitUntil(setCachedData(env, 'imageCache', imageCache, 3600));
                     }
                 }
@@ -557,7 +600,8 @@ export default {
             } catch (error) {
                 console.error('Error generating overlay:', error);
                 return handleCors(request, new Response(JSON.stringify({
-                    error: 'Failed to generate overlay'
+                    error: 'Failed to generate overlay',
+                    details: error.message
                 }), {
                     status: 500,
                     headers: { 'Content-Type': 'application/json' }
@@ -565,31 +609,27 @@ export default {
             }
         }
         
-        // Collection endpoints
-        const collectionRoutes = {
-            '/api/sketchbooks': { name: 'sketchbooks', folder: '/Sketchbooks' },
-            '/api/paintings': { name: 'paintings', folder: '/Paintings' },
-            '/api/photo': { name: 'photo', folder: '/Photo' },
-        };
-
-        const collectionRoute = collectionRoutes[url.pathname];
-        if (collectionRoute && request.method === 'GET') {
+        // Generic /api/<collection> handler — dispatches based on COLLECTION_PATHS
+        const collectionMatch = url.pathname.match(/^\/api\/([^\/]+)$/);
+        if (collectionMatch && request.method === 'GET' && COLLECTION_PATHS[collectionMatch[1]]) {
+            const slug = collectionMatch[1];
+            const folderPath = COLLECTION_PATHS[slug];
+            const cache = collectionsCache[slug];
             try {
-                const { name, folder } = collectionRoute;
-                const cache = collectionsCache[name];
                 const forceRefresh = url.searchParams.get('refresh') === 'true';
-
-                const needsRefresh = forceRefresh ||
-                                   !cache.lastFetch ||
-                                   (Date.now() - cache.lastFetch) > collectionsCache.cacheTimeout ||
-                                   cache.images.length === 0;
+                const needsRefresh = forceRefresh
+                    || !cache.lastFetch
+                    || (Date.now() - cache.lastFetch) > collectionsCache.cacheTimeout
+                    || cache.images.length === 0;
 
                 if (needsRefresh) {
-                    console.log(`Fetching fresh ${name} images...`);
-                    const images = await getAllImagesFromFolder(env, folder);
+                    console.log(`Cache expired or empty, fetching fresh ${slug} images from ${folderPath}...`);
+                    const images = await getAllImagesFromFolder(env, folderPath);
                     cache.images = images;
                     cache.lastFetch = Date.now();
-                    console.log(`Cached ${images.length} ${name} images`);
+                    console.log(`Cached ${images.length} images for ${slug}`);
+                } else {
+                    console.log(`Serving ${cache.images.length} cached ${slug} images`);
                 }
 
                 return handleCors(request, new Response(JSON.stringify({
@@ -600,11 +640,63 @@ export default {
                     status: 200,
                     headers: { 'Content-Type': 'application/json' }
                 }));
-
             } catch (error) {
-                console.error(`Error fetching ${collectionRoute.name}:`, error);
+                console.error(`Error fetching ${slug}:`, error);
                 return handleCors(request, new Response(JSON.stringify({
-                    error: `Failed to fetch ${collectionRoute.name}`
+                    error: `Failed to fetch ${slug}`,
+                    details: error.message
+                }), {
+                    status: 500,
+                    headers: { 'Content-Type': 'application/json' }
+                }));
+            }
+        }
+        
+        // Handle /api/debug endpoint for troubleshooting
+        if (url.pathname === '/api/debug' && request.method === 'GET') {
+            try {
+                // Test basic Dropbox connection
+                const testResponse = await dropboxApiCall('users/get_current_account', env);
+                
+                return handleCors(request, new Response(JSON.stringify({
+                    dropboxConnected: true,
+                    accountInfo: {
+                        name: testResponse.name.display_name,
+                        email: testResponse.email
+                    },
+                    tokenInfo: {
+                        type: env.DROPBOX_REFRESH_TOKEN ? 'refresh_token' : 'access_token',
+                        tokenCached: !!tokenCache.accessToken,
+                        expiresAt: tokenCache.expiresAt,
+                        expiresIn: tokenCache.expiresAt ? Math.round((tokenCache.expiresAt - Date.now()) / 1000) : null
+                    },
+                    cacheStatus: {
+                        lastFetch: imageCache.lastFetch,
+                        baseImagesCount: imageCache.baseImages.length,
+                        overlayImagesCount: imageCache.overlayImages.length
+                    },
+                    collectionsCacheStatus: {
+                        sketchbooks: {
+                            lastFetch: collectionsCache.sketchbooks.lastFetch,
+                            imagesCount: collectionsCache.sketchbooks.images.length
+                        },
+                        paintings: {
+                            lastFetch: collectionsCache.paintings.lastFetch,
+                            imagesCount: collectionsCache.paintings.images.length
+                        },
+                        photo: {
+                            lastFetch: collectionsCache.photo.lastFetch,
+                            imagesCount: collectionsCache.photo.images.length
+                        }
+                    }
+                }), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' }
+                }));
+            } catch (error) {
+                return handleCors(request, new Response(JSON.stringify({
+                    dropboxConnected: false,
+                    error: error.message
                 }), {
                     status: 500,
                     headers: { 'Content-Type': 'application/json' }

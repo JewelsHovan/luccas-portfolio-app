@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Floating Glyphs Prototype</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Codystar:wght@400&family=Noto+Sans+Egyptian+Hieroglyphs&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: #f8f8f8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
+
+  /* Header (matches real app) */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+    z-index: 1000; padding: 20px 0;
+  }
+  .header-content {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0 40px;
+  }
+  .logo {
+    font-family: 'Codystar', cursive; font-size: 24px;
+    letter-spacing: 3px; color: #000;
+  }
+
+  /* Main content (matches real Home) */
+  .main-content {
+    padding-top: 100px; padding-bottom: 40px;
+    padding-left: 40px; padding-right: 40px;
+    height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    max-width: 900px; margin: 0 auto; width: 100%;
+  }
+  .hero { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; }
+
+  /* Stand-in for the image-overlay canvas: variable aspect ratio, dragable */
+  .overlay-stub {
+    width: 100%; max-width: 780px; aspect-ratio: 5/3;
+    background: repeating-linear-gradient(45deg, #cdc8bd 0 18px, #c4bfb3 18px 19px);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    position: relative;
+    cursor: grab;
+  }
+  .overlay-stub.tall { aspect-ratio: 3/4; max-width: 480px; }
+  .overlay-stub.wide { aspect-ratio: 16/7; max-width: 900px; }
+
+  .caption {
+    text-align: center; margin-top: 18px;
+  }
+  .caption .t { font-size: 14px; color: #333; margin-bottom: 8px; }
+  .caption .d { font-size: 10px; color: #666; margin-bottom: 8px; }
+  .caption .a { font-size: 12px; color: #666; }
+
+  .copyright {
+    position: fixed; bottom: 20px; right: 40px;
+    font-size: 12px; color: #666; letter-spacing: 0.5px; z-index: 100;
+  }
+
+  /* The glyph layer */
+  .glyph-layer {
+    position: fixed; inset: 0; pointer-events: none; z-index: 50;
+  }
+  .glyph-floater {
+    position: absolute;
+    font-family: 'Noto Sans Egyptian Hieroglyphs', serif;
+    color: var(--glyph-color, #999);
+    opacity: 0; transition: opacity 0.4s ease;
+    user-select: none; cursor: pointer; pointer-events: auto;
+    animation: glyph-drift var(--dur, 8s) ease-in-out infinite alternate;
+    animation-delay: var(--delay, 0s);
+  }
+  .glyph-floater.visible { opacity: var(--glyph-opacity, 0.85); }
+  .glyph-floater.fading  { opacity: 0; }
+  .glyph-layer { /* keep layer non-interactive — only spans capture clicks */
+    pointer-events: none;
+  }
+  @keyframes glyph-drift {
+    to { transform: translate(var(--dx, 0), var(--dy, 0)); }
+  }
+
+  /* Debug overlay */
+  .debug-rect {
+    position: fixed; outline: 1px dashed rgba(255,0,0,0.5);
+    background: rgba(255,0,0,0.05); pointer-events: none; z-index: 49;
+  }
+
+  /* Toolbar */
+  .toolbar {
+    position: fixed; top: 80px; left: 50%; transform: translateX(-50%);
+    z-index: 2000; display: flex; gap: 8px; flex-wrap: wrap;
+    background: rgba(255,255,255,0.9); padding: 8px 12px;
+    border: 1px solid rgba(0,0,0,0.1); border-radius: 6px;
+    backdrop-filter: blur(8px); font-family: 'Courier New', monospace; font-size: 12px;
+  }
+  .toolbar button { font: inherit; background: #000; color: #fff; border: 0; padding: 6px 10px; cursor: pointer; }
+  .toolbar button.alt { background: transparent; color: #000; border: 1px solid #000; }
+  .toolbar label { display: flex; align-items: center; gap: 4px; }
+
+  @media (max-width: 768px) {
+    .header { padding: 15px 0; }
+    .header-content { padding: 0 20px; }
+    .logo { font-size: 15px; letter-spacing: 2.5px; }
+    .main-content { padding: 80px 20px 10px; max-width: 100%; }
+    .copyright { right: 20px; bottom: 15px; }
+    .toolbar { top: 70px; font-size: 10px; }
+  }
+</style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-content">
+      <h1 class="logo">LUCCAS BOOTH</h1>
+      <span style="font-size:24px">☰</span>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <div class="hero">
+      <div id="overlay" class="overlay-stub"></div>
+      <div id="caption" class="caption">
+        <p class="t"><em>'source-over'</em></p>
+        <p class="d">2025-ongoing</p>
+        <p class="a">Luccas Booth &amp; Julien Hovan</p>
+      </div>
+    </div>
+  </main>
+
+  <div id="copyright" class="copyright">©luccasbooth</div>
+
+  <div class="glyph-layer" id="glyphLayer"></div>
+
+  <div class="toolbar">
+    <button id="reshuffle">Re-shuffle</button>
+    <button id="aspect" class="alt">Cycle overlay aspect</button>
+    <label><input type="checkbox" id="debug"/> Show forbidden rects</label>
+    <label>count <input type="number" id="count" value="4" min="0" max="8" style="width:36px"/></label>
+  </div>
+
+<script>
+// 105 glyphs, same pool as Symbols.jsx (one duplicate 𓇠 — harmless after Set dedupe)
+const SYMBOL_GLYPHS = [
+  '𓆉','𓃹','𓆗','𓆜','𓅣','𓇬','𓇽','𓆝','𓁹','𓂂',
+  '𓂎','𓄅','𓄋','𓄓','𓄝','𓄰','𓄼','𓅌','𓇄','𓇓',
+  '𓇜','𓇠','𓇦','𓇩','𓊐','𓊑','𓊒','𓊗','𓊤','𓊮',
+  '𓊸','𓇣','𓆺','𓈕','𓋙','𓋜','𓋝','𓋩','𓋯','𓋭',
+  '𓌅','𓌗','𓌸','𓍢','𓍭','𓍼','𓎂','𓎕','𓎤',
+  '𓏲','𓏋','𓐜','𓐬','𓐮','𓎾','𓎷','𓍳','𓍮','𓍛',
+  '𓍔','𓍕','𓌴','𓌪','𓌕','𓋻','𓋛','𓋐','𓊽','𓊶',
+  '𓉾','𓉵','𓈞','𓇸','𓇝','𓍶','𓂪','𓄔','𓄢','𓄽',
+  '𓇠','𓊃','𓋎','𓋤','𓌽','𓍓','𓍡','𓎦','𓏉','𓏊',
+  '𓏖','𓏡','𓏯','𓏴','𓐢','𓐧','𓂄','𓂇','𓂈','𓄨',
+  '𓇞','𓌥','𓊇','𓌆','𓍬','𓎘',
+];
+
+const isMobile = () => window.innerWidth <= 768;
+
+function consts() {
+  const m = isMobile();
+  return {
+    HEADER_H:       m ? 60 : 72,
+    OVERLAY_OUTER:  m ? 32 : 60, // band thickness OUTSIDE the canvas (forbidden ring outward)
+    OVERLAY_INNER:  m ? 16 : 28, // band thickness INSIDE the canvas (forbidden ring inward — glyphs can sit inside, not on the border)
+    CAPTION_PAD:    m ? 16 : 24,
+    COPYRIGHT_PAD:  m ? 12 : 20,
+    EDGE_MARGIN:    m ? 28 : 56, // breathing room from viewport edges
+    GLYPH_SIZE:     m ? 32 : 48,
+    GLYPH_FONT:     m ? 24 : 36,
+    DEFAULT_COUNT:  m ? 3 : 4,
+    COLOR_OUTSIDE:  '#999',                  // light gray on the page background
+    COLOR_INSIDE:   'rgba(255,255,255,0.9)', // white-gray when on top of the overlay
+    OPACITY_OUTSIDE: 0.85,
+    OPACITY_INSIDE:  0.95,
+  };
+}
+
+function expand(rect, p) {
+  return { x: rect.left - p, y: rect.top - p, w: rect.width + 2*p, h: rect.height + 2*p };
+}
+function intersects(a, b) {
+  return !(a.x + a.w <= b.x || a.x >= b.x + b.w || a.y + a.h <= b.y || a.y >= b.y + b.h);
+}
+function rand(a, b) { return a + Math.random() * (b - a); }
+
+function getZones() {
+  const C = consts();
+  const overlay   = document.getElementById('overlay').getBoundingClientRect();
+  const caption   = document.getElementById('caption').getBoundingClientRect();
+  const copyright = document.getElementById('copyright').getBoundingClientRect();
+
+  // The overlay's "forbidden" region is a ring (band): from OVERLAY_OUTER
+  // outside the canvas to OVERLAY_INNER inside it. Glyphs are allowed to land
+  // *inside* the inner contracted rect, but not on/near the border.
+  const outer = {
+    left:   overlay.left   - C.OVERLAY_OUTER,
+    top:    overlay.top    - C.OVERLAY_OUTER,
+    right:  overlay.right  + C.OVERLAY_OUTER,
+    bottom: overlay.bottom + C.OVERLAY_OUTER,
+  };
+  const inner = {
+    left:   overlay.left   + C.OVERLAY_INNER,
+    top:    overlay.top    + C.OVERLAY_INNER,
+    right:  overlay.right  - C.OVERLAY_INNER,
+    bottom: overlay.bottom - C.OVERLAY_INNER,
+  };
+  const innerW = Math.max(0, inner.right - inner.left);
+  const innerH = Math.max(0, inner.bottom - inner.top);
+
+  let overlayBand;
+  if (innerW > 0 && innerH > 0) {
+    // 4-rect ring (top, bottom, left, right strips around the inner rect)
+    overlayBand = [
+      { x: outer.left,  y: outer.top,    w: outer.right - outer.left, h: inner.top - outer.top,         label: 'overlay-top' },
+      { x: outer.left,  y: inner.bottom, w: outer.right - outer.left, h: outer.bottom - inner.bottom,   label: 'overlay-bottom' },
+      { x: outer.left,  y: inner.top,    w: inner.left - outer.left,  h: innerH,                        label: 'overlay-left' },
+      { x: inner.right, y: inner.top,    w: outer.right - inner.right, h: innerH,                       label: 'overlay-right' },
+    ];
+  } else {
+    // Inner rect collapsed (canvas too small for inner margin) — fall back to solid block
+    overlayBand = [
+      { x: outer.left, y: outer.top, w: outer.right - outer.left, h: outer.bottom - outer.top, label: 'overlay-fallback' },
+    ];
+  }
+
+  return {
+    forbidden: [
+      { x: 0, y: 0, w: window.innerWidth, h: C.HEADER_H, label: 'header' },
+      ...overlayBand,
+      { ...expand(caption,   C.CAPTION_PAD),   label: 'caption' },
+      { ...expand(copyright, C.COPYRIGHT_PAD), label: 'copyright' },
+    ],
+    overlayInner: { x: inner.left, y: inner.top, w: innerW, h: innerH },
+  };
+}
+
+function placeOne(forbidden, placed, attempts = 80) {
+  const C = consts();
+  const vw = window.innerWidth, vh = window.innerHeight;
+  // Contract bounds by EDGE_MARGIN so glyphs don't hug the viewport border.
+  const minX = C.EDGE_MARGIN;
+  const maxX = vw - C.EDGE_MARGIN - C.GLYPH_SIZE;
+  const minY = C.HEADER_H + C.EDGE_MARGIN;
+  const maxY = vh - C.EDGE_MARGIN - C.GLYPH_SIZE;
+  if (maxX <= minX || maxY <= minY) return null; // viewport too small
+  for (let i = 0; i < attempts; i++) {
+    const x = rand(minX, maxX);
+    const y = rand(minY, maxY);
+    const r = { x, y, w: C.GLYPH_SIZE, h: C.GLYPH_SIZE };
+    if (forbidden.some(f => intersects(r, f))) continue;
+    if (placed.some(p => intersects(r, p))) continue;
+    return r;
+  }
+  return null;
+}
+
+// Persistent registry of currently rendered glyphs so click-to-replace can
+// recompute placement against the live state.
+const glyphState = []; // each: { rect, char, el }
+
+function isInside(glyphRect, area) {
+  return area.w > 0 && area.h > 0
+      && glyphRect.x >= area.x
+      && glyphRect.x + glyphRect.w <= area.x + area.w
+      && glyphRect.y >= area.y
+      && glyphRect.y + glyphRect.h <= area.y + area.h;
+}
+
+function pickUniqueChar(usedChars) {
+  for (let i = 0; i < 50; i++) {
+    const c = SYMBOL_GLYPHS[Math.floor(Math.random() * SYMBOL_GLYPHS.length)];
+    if (!usedChars.has(c)) return c;
+  }
+  return SYMBOL_GLYPHS[Math.floor(Math.random() * SYMBOL_GLYPHS.length)];
+}
+
+function makeGlyphEl(rect, char, C, insideOverlay) {
+  const span = document.createElement('span');
+  span.className = 'glyph-floater';
+  span.textContent = char;
+  span.style.left = rect.x + 'px';
+  span.style.top  = rect.y + 'px';
+  span.style.fontSize = C.GLYPH_FONT + 'px';
+  span.style.setProperty('--glyph-color',   insideOverlay ? C.COLOR_INSIDE   : C.COLOR_OUTSIDE);
+  span.style.setProperty('--glyph-opacity', insideOverlay ? C.OPACITY_INSIDE : C.OPACITY_OUTSIDE);
+  // Per-glyph drift
+  const dx = (Math.random() * 24 - 12).toFixed(1);
+  const dy = (Math.random() * 24 - 12).toFixed(1);
+  const dur = (6 + Math.random() * 5).toFixed(2);
+  const delay = (Math.random() * 4).toFixed(2);
+  span.style.setProperty('--dx', dx + 'px');
+  span.style.setProperty('--dy', dy + 'px');
+  span.style.setProperty('--dur', dur + 's');
+  span.style.setProperty('--delay', '-' + delay + 's');
+  span.addEventListener('click', () => replaceGlyph(span));
+  return span;
+}
+
+function drawDebug(zones) {
+  const C = consts();
+  const layer = document.getElementById('glyphLayer');
+  layer.querySelectorAll('.debug-rect').forEach(n => n.remove());
+  zones.forbidden.forEach(f => {
+    const d = document.createElement('div');
+    d.className = 'debug-rect';
+    Object.assign(d.style, { left: f.x+'px', top: f.y+'px', width: f.w+'px', height: f.h+'px' });
+    layer.appendChild(d);
+  });
+  // Green = viewport safe area (after EDGE_MARGIN)
+  const safe = document.createElement('div');
+  safe.className = 'debug-rect';
+  Object.assign(safe.style, {
+    outlineColor: 'rgba(0,128,0,0.6)',
+    background:  'rgba(0,128,0,0.04)',
+    left:   C.EDGE_MARGIN + 'px',
+    top:    (C.HEADER_H + C.EDGE_MARGIN) + 'px',
+    width:  (window.innerWidth  - 2*C.EDGE_MARGIN) + 'px',
+    height: (window.innerHeight - C.HEADER_H - 2*C.EDGE_MARGIN) + 'px',
+  });
+  layer.appendChild(safe);
+  // Blue = overlay-inner permitted zone
+  if (zones.overlayInner.w > 0) {
+    const inner = document.createElement('div');
+    inner.className = 'debug-rect';
+    Object.assign(inner.style, {
+      outlineColor: 'rgba(0,80,200,0.6)',
+      background:  'rgba(0,80,200,0.04)',
+      left:   zones.overlayInner.x + 'px',
+      top:    zones.overlayInner.y + 'px',
+      width:  zones.overlayInner.w + 'px',
+      height: zones.overlayInner.h + 'px',
+    });
+    layer.appendChild(inner);
+  }
+}
+
+function placeGlyphs() {
+  const C = consts();
+  const layer = document.getElementById('glyphLayer');
+  // Clear existing
+  glyphState.length = 0;
+  layer.innerHTML = '';
+  const want = parseInt(document.getElementById('count').value, 10) || C.DEFAULT_COUNT;
+  const zones = getZones();
+  if (document.getElementById('debug').checked) drawDebug(zones);
+
+  const placedRects = [];
+  const usedChars = new Set();
+  for (let i = 0; i < want; i++) {
+    const r = placeOne(zones.forbidden, placedRects);
+    if (!r) continue;
+    const insideOverlay = isInside(r, zones.overlayInner);
+    const char = pickUniqueChar(usedChars);
+    usedChars.add(char);
+    const el = makeGlyphEl(r, char, C, insideOverlay);
+    layer.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('visible'));
+    glyphState.push({ rect: r, char, el });
+    placedRects.push(r);
+  }
+  console.log('Placed', glyphState.length, '/', want, 'glyphs');
+}
+
+function replaceGlyph(oldEl) {
+  const C = consts();
+  const idx = glyphState.findIndex(g => g.el === oldEl);
+  if (idx === -1) return;
+  const old = glyphState[idx];
+  glyphState.splice(idx, 1);
+
+  // Fade-out the clicked glyph
+  oldEl.classList.add('fading');
+  oldEl.style.pointerEvents = 'none';
+  setTimeout(() => oldEl.remove(), 400);
+
+  // Place a new one anywhere available, distinct from the others' rects/chars
+  const zones = getZones();
+  const placedRects = glyphState.map(g => g.rect);
+  // Also avoid the spot we just freed for a frame, so the replacement isn't
+  // identical-position. Rejection sampling will rarely pick the exact same px anyway.
+  const r = placeOne(zones.forbidden, [...placedRects, old.rect]);
+  if (!r) return; // no room — leave it gone
+
+  const insideOverlay = isInside(r, zones.overlayInner);
+  const usedChars = new Set(glyphState.map(g => g.char));
+  usedChars.add(old.char); // avoid immediately recycling the exact same char too
+  const char = pickUniqueChar(usedChars);
+  const el = makeGlyphEl(r, char, C, insideOverlay);
+  document.getElementById('glyphLayer').appendChild(el);
+  requestAnimationFrame(() => el.classList.add('visible'));
+  glyphState.push({ rect: r, char, el });
+
+  // Refresh debug overlay if showing
+  if (document.getElementById('debug').checked) drawDebug(zones);
+}
+
+// Recompute on resize (debounced) + when the overlay aspect changes
+let resizeT;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeT);
+  resizeT = setTimeout(placeGlyphs, 150);
+});
+
+document.getElementById('reshuffle').addEventListener('click', placeGlyphs);
+document.getElementById('debug').addEventListener('change', placeGlyphs);
+document.getElementById('count').addEventListener('change', placeGlyphs);
+
+// Cycle overlay aspect to simulate canvas resize (real app: ResizeObserver on canvas)
+const ASPECTS = ['', 'tall', 'wide'];
+let aspectIdx = 0;
+document.getElementById('aspect').addEventListener('click', () => {
+  aspectIdx = (aspectIdx + 1) % ASPECTS.length;
+  const ov = document.getElementById('overlay');
+  ov.classList.remove('tall', 'wide');
+  if (ASPECTS[aspectIdx]) ov.classList.add(ASPECTS[aspectIdx]);
+  setTimeout(placeGlyphs, 50); // wait for layout
+});
+
+// First paint after fonts likely have begun loading
+window.addEventListener('load', () => setTimeout(placeGlyphs, 100));
+</script>
+</body>
+</html>

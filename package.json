@@ -1,28 +1,19 @@
 {
   "name": "luccas-portfolio-app",
-  "private": true,
   "version": "1.0.0",
   "description": "Luccas Portfolio with dynamic image overlays",
   "scripts": {
-    "dev": "pnpm -r --parallel run dev",
-    "dev:frontend": "pnpm --filter frontend run dev",
-    "dev:backend": "pnpm --filter ./backend run dev",
-    "build": "pnpm --filter frontend run build",
-    "start": "pnpm --filter ./backend run start",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install",
+    "start": "cd backend && npm start"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "sharp",
-      "workerd"
-    ]
+  "devDependencies": {
+    "concurrently": "^7.6.0"
   },
   "engines": {
     "node": ">=18"
-  },
-  "devDependencies": {
-    "vitest": "^4.1.2"
   }
 }

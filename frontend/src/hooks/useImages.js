@@ -1,52 +1,85 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import apiService from '../services/api';
 
 export const useImages = () => {
-  const [images, setImages] = useState({ baseImage: null, overlayImage: null });
+  const [images, setImages] = useState({
+    baseImage: null,
+    overlayImage: null
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const nextPairRef = useRef(null);
+  
+  // Store all available images
+  const allImagesRef = useRef({
+    baseImages: [],
+    overlayImages: []
+  });
 
-  const prefetchNext = useCallback(async () => {
+  // Initialize by fetching all images once
+  const initializeImages = async () => {
     try {
-      const data = await apiService.generateOverlay();
-      nextPairRef.current = data;
-    } catch (err) {
-      console.warn('Prefetch failed:', err.message);
-      nextPairRef.current = null;
-    }
-  }, []);
-
-  const fetchOverlay = useCallback(async () => {
-    try {
+      setLoading(true);
       setError(null);
-
-      // Use prefetched data if available
-      if (nextPairRef.current) {
-        const prefetched = nextPairRef.current;
-        nextPairRef.current = null;
-        setImages({ baseImage: prefetched.baseImage, overlayImage: prefetched.overlayImage });
-        prefetchNext();
-        return;
-      }
-
-      const data = await apiService.generateOverlay();
-      setImages({ baseImage: data.baseImage, overlayImage: data.overlayImage });
-      prefetchNext();
+      
+      // Fetch all images
+      const data = await apiService.fetchAllImages();
+      console.log('Fetched all images:', {
+        baseCount: data.baseImages?.length,
+        overlayCount: data.overlayImages?.length
+      });
+      
+      // Store all images
+      allImagesRef.current = {
+        baseImages: data.baseImages || [],
+        overlayImages: data.overlayImages || []
+      };
+      
+      // Get initial random pair
+      const initialPair = await apiService.generateOverlay();
+      setImages({
+        baseImage: initialPair.baseImage,
+        overlayImage: initialPair.overlayImage
+      });
+      
     } catch (err) {
       setError(err.message);
-      console.error('Failed to fetch overlay:', err);
+      console.error('Failed to initialize images:', err);
+    } finally {
+      setLoading(false);
     }
-  }, [prefetchNext]);
+  };
+
+  // Get new random pair
+  const generateNewOverlay = async () => {
+    try {
+      setError(null);
+      
+      const data = await apiService.generateOverlay();
+      console.log('Generated new overlay:', {
+        base: data.baseImage?.name,
+        overlay: data.overlayImage?.name
+      });
+      
+      setImages({
+        baseImage: data.baseImage,
+        overlayImage: data.overlayImage
+      });
+      
+    } catch (err) {
+      setError(err.message);
+      console.error('Failed to generate overlay:', err);
+    }
+  };
 
   useEffect(() => {
-    const init = async () => {
-      setLoading(true);
-      await fetchOverlay();
-      setLoading(false);
-    };
-    init();
+    initializeImages();
   }, []);
 
-  return { images, loading, error, refetch: fetchOverlay };
+  return {
+    images,
+    loading,
+    error,
+    refetch: generateNewOverlay,
+    allImages: allImagesRef.current
+  };
 };

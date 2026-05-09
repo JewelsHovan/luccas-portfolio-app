@@ -1,26 +1,19 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import './ImageOverlay.css';
 
-const OVERLAY_SETTINGS = {
-  opacity: 0.75,
-  scale: 0.55,
-  blendMode: 'source-over',
-};
-
-const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = true, onRefresh = null }) => {
-  const canvasRef = useRef(null);
-  const containerRef = useRef(null);
+const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = true, onRefresh = null, canvasRef: externalCanvasRef = null }) => {
+  const internalCanvasRef = useRef(null);
+  const canvasRef = externalCanvasRef || internalCanvasRef;
   const flashRef = useRef(null);
-  const retryCountRef = useRef(0);
-  const generateOverlayRef = useRef(null);
-  const baseImgRef = useRef(null);
-  const overlayImgRef = useRef(null);
-  const resizeTimerRef = useRef(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const [isFlashing, setIsFlashing] = useState(false);
-  const [isTransitioning, setIsTransitioning] = useState(false);
-  const [canvasReady, setCanvasReady] = useState(false);
-  const [canvasSize, setCanvasSize] = useState({ width: 1200, height: 720 });
+  const [settings, setSettings] = useState({
+    opacity: 0.75,
+    scale: 0.55,
+    blendMode: 'source-over',
+    position: 'center'
+  });
 
   const loadImageWithRetry = useCallback(async (imageData, isBase = true) => {
     const img = new Image();
@@ -72,12 +65,12 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
     if (!baseImage || !overlayImage || !canvasRef.current) return;
 
     setIsGenerating(true);
-    setCanvasReady(false);
     const canvas = canvasRef.current;
 
-    // Get context with performance hints
+    // Transparent context so any unpainted area shows page background, not pink.
     const ctx = canvas.getContext('2d', {
-      desynchronized: true // Allows async rendering
+      alpha: true,
+      desynchronized: true
     });
 
     try {
@@ -87,27 +80,24 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
         loadImageWithRetry(overlayImage, false)
       ]);
 
-      // Resize canvas to match base image aspect ratio
-      // Use the smaller dimension to detect mobile — prevents landscape phones from jumping to desktop size
-      const isMobile = Math.min(window.innerWidth, window.innerHeight) <= 768;
-      const maxWidth = isMobile ? 800 : 1200;
+      // Resize the canvas to match the base image's aspect ratio so the
+      // image fills the entire canvas — no letterbox/pillarbox bands.
+      const isMobileCalc = window.innerWidth <= 768;
+      const maxWidth = isMobileCalc ? 800 : 1200;
       const baseAspectRatio = baseImg.width / baseImg.height;
-      const newWidth = maxWidth;
-      const newHeight = Math.round(maxWidth / baseAspectRatio);
+      const targetWidth = Math.min(maxWidth, baseImg.width);
+      const targetHeight = Math.round(targetWidth / baseAspectRatio);
 
-      canvas.width = newWidth;
-      canvas.height = newHeight;
-      setCanvasSize({ width: newWidth, height: newHeight });
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
 
-      // Redraw white background after resize
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, newWidth, newHeight);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Draw base image filling the entire canvas
-      ctx.drawImage(baseImg, 0, 0, newWidth, newHeight);
+      // Draw base image full-bleed
+      ctx.drawImage(baseImg, 0, 0, canvas.width, canvas.height);
 
       // Calculate overlay dimensions
-      const maxOverlaySize = Math.min(canvas.width, canvas.height) * OVERLAY_SETTINGS.scale;
+      const maxOverlaySize = Math.min(canvas.width, canvas.height) * settings.scale;
       const overlayAspectRatio = overlayImg.width / overlayImg.height;
       
       let overlayWidth, overlayHeight;
@@ -125,8 +115,8 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
       const overlayY = (canvas.height - overlayHeight) / 2;
 
       // Apply blend mode and opacity
-      ctx.globalCompositeOperation = OVERLAY_SETTINGS.blendMode;
-      ctx.globalAlpha = OVERLAY_SETTINGS.opacity;
+      ctx.globalCompositeOperation = settings.blendMode;
+      ctx.globalAlpha = settings.opacity;
 
       // Draw overlay image
       ctx.drawImage(overlayImg, overlayX, overlayY, overlayWidth, overlayHeight);
@@ -134,106 +124,44 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
       // Reset context state
       ctx.globalCompositeOperation = 'source-over';
       ctx.globalAlpha = 1.0;
-
-      // Cache loaded images for resize redraws
-      baseImgRef.current = baseImg;
-      overlayImgRef.current = overlayImg;
-
+      
       // Reset retry count on success
-      retryCountRef.current = 0;
-
-      setCanvasReady(true);
-
-      // Trigger scale-up transition
-      setIsTransitioning(true);
-      setTimeout(() => setIsTransitioning(false), 600);
+      setRetryCount(0);
 
     } catch (error) {
       console.error('Error generating overlay:', error);
       
       // Auto-retry on failure (up to 2 times)
-      if (retryCountRef.current < 2) {
-        retryCountRef.current++;
+      if (retryCount < 2) {
+        setRetryCount(prev => prev + 1);
         setTimeout(() => {
           console.log('Auto-retrying image generation...');
-          generateOverlayRef.current();
+          generateOverlay();
         }, 2000);
       }
     } finally {
       setIsGenerating(false);
     }
-  }, [baseImage, overlayImage, loadImageWithRetry]);
-
-  generateOverlayRef.current = generateOverlay;
-
-  const redrawCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    const baseImg = baseImgRef.current;
-    const overlayImg = overlayImgRef.current;
-    if (!canvas || !baseImg || !overlayImg) return;
-
-    const ctx = canvas.getContext('2d', { desynchronized: true });
-
-    const isMobile = Math.min(window.innerWidth, window.innerHeight) <= 768;
-    const maxWidth = isMobile ? 800 : 1200;
-    const baseAspectRatio = baseImg.width / baseImg.height;
-    const newWidth = maxWidth;
-    const newHeight = Math.round(maxWidth / baseAspectRatio);
-
-    canvas.width = newWidth;
-    canvas.height = newHeight;
-    setCanvasSize({ width: newWidth, height: newHeight });
-
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, newWidth, newHeight);
-    ctx.drawImage(baseImg, 0, 0, newWidth, newHeight);
-
-    const maxOverlaySize = Math.min(canvas.width, canvas.height) * OVERLAY_SETTINGS.scale;
-    const overlayAspectRatio = overlayImg.width / overlayImg.height;
-    let overlayWidth, overlayHeight;
-    if (overlayAspectRatio > 1) {
-      overlayWidth = maxOverlaySize;
-      overlayHeight = maxOverlaySize / overlayAspectRatio;
-    } else {
-      overlayHeight = maxOverlaySize;
-      overlayWidth = maxOverlaySize * overlayAspectRatio;
-    }
-
-    const overlayX = (canvas.width - overlayWidth) / 2;
-    const overlayY = (canvas.height - overlayHeight) / 2;
-
-    ctx.globalCompositeOperation = OVERLAY_SETTINGS.blendMode;
-    ctx.globalAlpha = OVERLAY_SETTINGS.opacity;
-    ctx.drawImage(overlayImg, overlayX, overlayY, overlayWidth, overlayHeight);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1.0;
-  }, []);
+  }, [baseImage, overlayImage, settings, loadImageWithRetry, retryCount]);
 
   useEffect(() => {
     if (!baseImage || !overlayImage) return;
-
-    const timer = setTimeout(() => {
-      generateOverlayRef.current();
-    }, 0);
-
-    return () => clearTimeout(timer);
-  }, [baseImage?.url, overlayImage?.url]);
-
-  useEffect(() => {
-    const handleResize = () => {
-      if (resizeTimerRef.current) cancelAnimationFrame(resizeTimerRef.current);
-      resizeTimerRef.current = requestAnimationFrame(() => {
-        redrawCanvas();
-      });
-    };
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('orientationchange', handleResize);
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('orientationchange', handleResize);
-      if (resizeTimerRef.current) cancelAnimationFrame(resizeTimerRef.current);
-    };
-  }, [redrawCanvas]);
+    
+    console.log('ImageOverlay effect triggered:', {
+      base: baseImage.name,
+      overlay: overlayImage.name
+    });
+    
+    // Only generate if not already generating
+    if (!isGenerating) {
+      // Add small delay to ensure component is mounted
+      const timer = setTimeout(() => {
+        generateOverlay();
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [baseImage?.url, overlayImage?.url]); // Use URLs as dependencies
 
   const downloadImage = () => {
     const canvas = canvasRef.current;
@@ -243,37 +171,37 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
     link.click();
   };
 
+  // Adjust canvas size for mobile
+  const isMobile = window.innerWidth <= 768;
+  const canvasWidth = isMobile ? 800 : 1200;
+  const canvasHeight = isMobile ? 480 : 720;
+
   return (
     <div className="image-overlay">
-      <div className="canvas-container" ref={containerRef}>
-        <canvas
-          ref={canvasRef}
-          width={canvasSize.width}
-          height={canvasSize.height}
-          className={`overlay-canvas ${isTransitioning ? 'transitioning' : ''}`}
+      <div className="canvas-container">
+        <canvas 
+          ref={canvasRef} 
+          width={canvasWidth} 
+          height={canvasHeight}
+          className="overlay-canvas"
           onClick={async () => {
             if (!isGenerating && onRefresh) {
               console.log('Canvas clicked, triggering flash and refresh');
               // Trigger flash animation
               setIsFlashing(true);
-
+              
               // Wait a moment for flash to be visible
               await new Promise(resolve => setTimeout(resolve, 50));
-
+              
               // Call refresh
               onRefresh();
-
+              
               // Remove flash after animation completes
               setTimeout(() => setIsFlashing(false), 300);
             }
           }}
-          style={{ visibility: canvasReady ? 'visible' : 'hidden', cursor: isGenerating ? 'wait' : 'pointer' }}
+          style={{ cursor: isGenerating ? 'wait' : 'pointer' }}
         />
-        {!canvasReady && (
-          <div className="loading-overlay">
-            <div className="spinner"></div>
-          </div>
-        )}
         {/* Flash overlay */}
         <div 
           ref={flashRef}

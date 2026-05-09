@@ -1,226 +1,271 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useLayoutEffect } from 'react';
 import './FloatingGlyphs.css';
 
-const GLYPHS = [
-  '𓆉','𓃹','𓆗','𓆜','𓅣','𓇬','𓇽','𓆝','𓁹','𓂂','𓂎','𓄅','𓄋','𓄓',
-  '𓄝','𓄰','𓄼','𓅌','𓇄','𓇓','𓇜','𓇠','𓇦','𓇩','𓊐','𓊑','𓊒','𓊗',
-  '𓊤','𓊮','𓊸','𓇣','𓆺','𓈕','𓋙','𓋜','𓋝','𓋩','𓋯','𓋭','𓌅','𓌗',
-  '𓌸','𓍢','𓍭','𓍼','𓎂','𓎕','𓎤','𓏲','𓏋','𓐜','𓐬','𓐮','𓎾','𓎷',
-  '𓍳','𓍮','𓍛','𓍔','𓍕','𓌴','𓌪','𓌕','𓋻','𓋛','𓋐','𓊽','𓊶','𓉾',
-  '𓉵','𓈞','𓇸','𓇝'
+// Pool of 105 Egyptian hieroglyphs (one duplicate `𓇠` — harmless, the
+// per-frame Set dedupes it when picking).
+const SYMBOL_GLYPHS = [
+  '𓆉','𓃹','𓆗','𓆜','𓅣','𓇬','𓇽','𓆝','𓁹','𓂂',
+  '𓂎','𓄅','𓄋','𓄓','𓄝','𓄰','𓄼','𓅌','𓇄','𓇓',
+  '𓇜','𓇠','𓇦','𓇩','𓊐','𓊑','𓊒','𓊗','𓊤','𓊮',
+  '𓊸','𓇣','𓆺','𓈕','𓋙','𓋜','𓋝','𓋩','𓋯','𓋭',
+  '𓌅','𓌗','𓌸','𓍢','𓍭','𓍼','𓎂','𓎕','𓎤',
+  '𓏲','𓏋','𓐜','𓐬','𓐮','𓎾','𓎷','𓍳','𓍮','𓍛',
+  '𓍔','𓍕','𓌴','𓌪','𓌕','𓋻','𓋛','𓋐','𓊽','𓊶',
+  '𓉾','𓉵','𓈞','𓇸','𓇝','𓍶','𓂪','𓄔','𓄢','𓄽',
+  '𓇠','𓊃','𓋎','𓋤','𓌽','𓍓','𓍡','𓎦','𓏉','𓏊',
+  '𓏖','𓏡','𓏯','𓏴','𓐢','𓐧','𓂄','𓂇','𓂈','𓄨',
+  '𓇞','𓌥','𓊇','𓌆','𓍬','𓎘',
 ];
 
-const GLYPH_PADDING_PX = 48; // keep glyphs this far from viewport edges
+const isMobile = () => window.innerWidth <= 768;
 
-function randomInRange(min, max) {
-  return min + Math.random() * (max - min);
-}
-
-function pickRandom(arr, exclude) {
-  let pick;
-  do {
-    pick = arr[Math.floor(Math.random() * arr.length)];
-  } while (pick === exclude && arr.length > 1);
-  return pick;
-}
-
-// Build a grid of cells across the safe area, pick one cell per glyph
-function buildGrid(count) {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const isMobile = Math.min(vw, vh) <= 768;
-
-  // Safe bounds in pixels — avoid header and bottom copyright
-  const topPx = isMobile ? 80 : 100; // match main-content padding-top
-  const bottomPx = 55; // copyright area
-  const sidePx = GLYPH_PADDING_PX;
-
-  const safeTop = topPx;
-  const safeBottom = vh - bottomPx;
-  const safeLeft = sidePx;
-  const safeRight = vw - sidePx;
-
-  const safeW = safeRight - safeLeft;
-  const safeH = safeBottom - safeTop;
-
-  // Determine grid dimensions — aim for roughly square cells
-  // Use at least 3 cols and enough rows to have >= count cells
-  const cols = Math.max(3, Math.ceil(Math.sqrt(count * (safeW / safeH))));
-  const rows = Math.max(2, Math.ceil(count / cols));
-
-  const cellW = safeW / cols;
-  const cellH = safeH / rows;
-
-  const cells = [];
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      cells.push({
-        xMin: safeLeft + c * cellW,
-        xMax: safeLeft + (c + 1) * cellW,
-        yMin: safeTop + r * cellH,
-        yMax: safeTop + (r + 1) * cellH,
-      });
-    }
-  }
-
-  // Shuffle and pick `count` cells so glyphs spread across different areas
-  for (let i = cells.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [cells[i], cells[j]] = [cells[j], cells[i]];
-  }
-
-  return cells.slice(0, count);
-}
-
-// Check if a pixel position overlaps the canvas element
-function isOverCanvas(xPx, yPx) {
-  const canvas = document.querySelector('.overlay-canvas');
-  if (!canvas) return false;
-  const rect = canvas.getBoundingClientRect();
-  return xPx >= rect.left && xPx <= rect.right && yPx >= rect.top && yPx <= rect.bottom;
-}
-
-function createGlyphInCell(id, cell, excludeChar) {
-  const padding = 10; // inner padding within cell
-  const x = randomInRange(cell.xMin + padding, cell.xMax - padding);
-  const y = randomInRange(cell.yMin + padding, cell.yMax - padding);
-  const char = pickRandom(GLYPHS, excludeChar);
-  const size = randomInRange(28, 42);
-  const driftX = randomInRange(-3, 3);
-  const driftY = randomInRange(-3, 3);
-  const driftDuration = randomInRange(16, 28);
-  const onCanvas = isOverCanvas(x, y);
-
-  return { id, char, x, y, size, driftX, driftY, driftDuration, onCanvas, visible: true };
-}
-
-function createGlyphAnywhere(id, existingGlyphs, excludeChar) {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const isMobile = Math.min(vw, vh) <= 768;
-
-  const topPx = isMobile ? 80 : 100;
-  const bottomPx = 55;
-  const sidePx = GLYPH_PADDING_PX;
-  const minDist = Math.min(vw, vh) * 0.12;
-
-  let attempts = 0;
-  while (attempts < 40) {
-    const x = randomInRange(sidePx, vw - sidePx);
-    const y = randomInRange(topPx, vh - bottomPx);
-
-    const tooClose = existingGlyphs.some(
-      g => Math.hypot(g.x - x, g.y - y) < minDist
-    );
-
-    if (!tooClose) {
-      const char = pickRandom(GLYPHS, excludeChar);
-      const size = randomInRange(28, 42);
-      const driftX = randomInRange(-3, 3);
-      const driftY = randomInRange(-3, 3);
-      const driftDuration = randomInRange(16, 28);
-      const onCanvas = isOverCanvas(x, y);
-      return { id, char, x, y, size, driftX, driftY, driftDuration, onCanvas, visible: true };
-    }
-    attempts++;
-  }
-
-  // Fallback
-  const x = randomInRange(sidePx, vw - sidePx);
-  const y = randomInRange(topPx, vh - bottomPx);
-  const char = pickRandom(GLYPHS, excludeChar);
-  const onCanvas = isOverCanvas(x, y);
+function getConsts() {
+  const m = isMobile();
   return {
-    id, char, x, y, size: 34, driftX: 0, driftY: 0,
-    driftDuration: 20, onCanvas, visible: true,
+    HEADER_H:        m ? 60 : 72,
+    OVERLAY_OUTER:   m ? 32 : 60, // forbidden ring thickness OUTSIDE the canvas
+    OVERLAY_INNER:   m ? 16 : 28, // forbidden ring thickness INSIDE the canvas
+    CAPTION_PAD:     m ? 16 : 24,
+    COPYRIGHT_PAD:   m ? 12 : 20,
+    EDGE_MARGIN:     m ? 28 : 56, // inset from viewport edges
+    GLYPH_SIZE:      m ? 32 : 48, // hit-box for collisions
+    GLYPH_FONT:      m ? 24 : 36,
+    DEFAULT_COUNT:   m ? 3 : 4,
+    COLOR_OUTSIDE:   '#999',
+    COLOR_INSIDE:    'rgba(255,255,255,0.9)',
+    OPACITY_OUTSIDE: 0.85,
+    OPACITY_INSIDE:  0.95,
   };
 }
 
-const FloatingGlyphs = () => {
-  const nextId = useRef(0);
+const expand = (rect, p) => ({
+  x: rect.left - p,
+  y: rect.top - p,
+  w: rect.width + 2 * p,
+  h: rect.height + 2 * p,
+});
+
+const intersects = (a, b) =>
+  !(a.x + a.w <= b.x || a.x >= b.x + b.w || a.y + a.h <= b.y || a.y >= b.y + b.h);
+
+const isInside = (g, area) =>
+  area.w > 0 && area.h > 0 &&
+  g.x >= area.x && g.x + g.w <= area.x + area.w &&
+  g.y >= area.y && g.y + g.h <= area.y + area.h;
+
+function getZones(canvasEl, captionEl, copyrightEl) {
+  const C = getConsts();
+  if (!canvasEl || !captionEl || !copyrightEl) return null;
+  const overlay   = canvasEl.getBoundingClientRect();
+  const caption   = captionEl.getBoundingClientRect();
+  const copyright = copyrightEl.getBoundingClientRect();
+
+  // Overlay forbidden zone is a 4-rect ring (band) around the canvas border —
+  // glyphs may land inside the canvas, just not on its edge seam.
+  const outer = {
+    left:   overlay.left   - C.OVERLAY_OUTER,
+    top:    overlay.top    - C.OVERLAY_OUTER,
+    right:  overlay.right  + C.OVERLAY_OUTER,
+    bottom: overlay.bottom + C.OVERLAY_OUTER,
+  };
+  const inner = {
+    left:   overlay.left   + C.OVERLAY_INNER,
+    top:    overlay.top    + C.OVERLAY_INNER,
+    right:  overlay.right  - C.OVERLAY_INNER,
+    bottom: overlay.bottom - C.OVERLAY_INNER,
+  };
+  const innerW = Math.max(0, inner.right - inner.left);
+  const innerH = Math.max(0, inner.bottom - inner.top);
+
+  const overlayBand = (innerW > 0 && innerH > 0) ? [
+    { x: outer.left,  y: outer.top,    w: outer.right - outer.left, h: inner.top - outer.top },
+    { x: outer.left,  y: inner.bottom, w: outer.right - outer.left, h: outer.bottom - inner.bottom },
+    { x: outer.left,  y: inner.top,    w: inner.left - outer.left,  h: innerH },
+    { x: inner.right, y: inner.top,    w: outer.right - inner.right, h: innerH },
+  ] : [
+    // Canvas too small for inner margin — fall back to solid block (no inside placement).
+    { x: outer.left, y: outer.top, w: outer.right - outer.left, h: outer.bottom - outer.top },
+  ];
+
+  return {
+    forbidden: [
+      { x: 0, y: 0, w: window.innerWidth, h: C.HEADER_H },
+      ...overlayBand,
+      expand(caption,   C.CAPTION_PAD),
+      expand(copyright, C.COPYRIGHT_PAD),
+    ],
+    overlayInner: { x: inner.left, y: inner.top, w: innerW, h: innerH },
+  };
+}
+
+function placeOne(forbidden, placedRects, attempts = 80) {
+  const C = getConsts();
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const minX = C.EDGE_MARGIN;
+  const maxX = vw - C.EDGE_MARGIN - C.GLYPH_SIZE;
+  const minY = C.HEADER_H + C.EDGE_MARGIN;
+  const maxY = vh - C.EDGE_MARGIN - C.GLYPH_SIZE;
+  if (maxX <= minX || maxY <= minY) return null;
+  for (let i = 0; i < attempts; i++) {
+    const x = minX + Math.random() * (maxX - minX);
+    const y = minY + Math.random() * (maxY - minY);
+    const r = { x, y, w: C.GLYPH_SIZE, h: C.GLYPH_SIZE };
+    if (forbidden.some(f => intersects(r, f))) continue;
+    if (placedRects.some(p => intersects(r, p))) continue;
+    return r;
+  }
+  return null;
+}
+
+function pickUniqueChar(usedChars) {
+  for (let i = 0; i < 50; i++) {
+    const c = SYMBOL_GLYPHS[Math.floor(Math.random() * SYMBOL_GLYPHS.length)];
+    if (!usedChars.has(c)) return c;
+  }
+  return SYMBOL_GLYPHS[Math.floor(Math.random() * SYMBOL_GLYPHS.length)];
+}
+
+const makeDriftStyle = () => ({
+  '--dx':    (Math.random() * 24 - 12).toFixed(1) + 'px',
+  '--dy':    (Math.random() * 24 - 12).toFixed(1) + 'px',
+  '--dur':   (6 + Math.random() * 5).toFixed(2) + 's',
+  '--delay': '-' + (Math.random() * 4).toFixed(2) + 's',
+});
+
+let nextGlyphId = 1;
+
+function buildGlyph(rect, char, insideOverlay) {
+  const C = getConsts();
+  return {
+    id: nextGlyphId++,
+    char,
+    rect,
+    insideOverlay,
+    color:   insideOverlay ? C.COLOR_INSIDE   : C.COLOR_OUTSIDE,
+    opacity: insideOverlay ? C.OPACITY_INSIDE : C.OPACITY_OUTSIDE,
+    drift:   makeDriftStyle(),
+    mounted: false, // becomes true after first paint so opacity transition fires
+    fading:  false,
+  };
+}
+
+const FloatingGlyphs = ({ canvasRef, captionRef, copyrightRef, count }) => {
   const [glyphs, setGlyphs] = useState([]);
 
-  useEffect(() => {
-    const count = Math.floor(Math.random() * 3) + 3; // 3-5
-    const cells = buildGrid(count);
-    const initial = cells.map((cell, i) => createGlyphInCell(i, cell, null));
-    nextId.current = count;
-    setGlyphs(initial);
-  }, []);
+  const placeAll = useCallback(() => {
+    const zones = getZones(
+      canvasRef?.current,
+      captionRef?.current,
+      copyrightRef?.current,
+    );
+    if (!zones) return;
+    const C = getConsts();
+    const want = count ?? C.DEFAULT_COUNT;
+    const placedRects = [];
+    const usedChars = new Set();
+    const next = [];
+    for (let i = 0; i < want; i++) {
+      const r = placeOne(zones.forbidden, placedRects);
+      if (!r) continue;
+      const inside = isInside(r, zones.overlayInner);
+      const char = pickUniqueChar(usedChars);
+      usedChars.add(char);
+      placedRects.push(r);
+      next.push(buildGlyph(r, char, inside));
+    }
+    setGlyphs(next);
+  }, [canvasRef, captionRef, copyrightRef, count]);
 
-  // Reposition glyphs on resize / orientation change
+  // Re-place on mount + observed-element resize + window resize
   useEffect(() => {
-    let resizeTimer;
-    const handleResize = () => {
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        setGlyphs(prev => {
-          const count = prev.length;
-          if (count === 0) return prev;
-          const cells = buildGrid(count);
-          return prev.map((g, i) => {
-            if (i < cells.length) {
-              const cell = cells[i];
-              const pad = 10;
-              const x = randomInRange(cell.xMin + pad, cell.xMax - pad);
-              const y = randomInRange(cell.yMin + pad, cell.yMax - pad);
-              const onCanvas = isOverCanvas(x, y);
-              return { ...g, x, y, onCanvas };
-            }
-            return g;
-          });
-        });
-      }, 150);
+    let raf = 0;
+    const schedule = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => placeAll());
     };
+    schedule();
 
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('orientationchange', handleResize);
+    const ro = new ResizeObserver(schedule);
+    if (canvasRef?.current)    ro.observe(canvasRef.current);
+    if (captionRef?.current)   ro.observe(captionRef.current);
+    if (copyrightRef?.current) ro.observe(copyrightRef.current);
+    window.addEventListener('resize', schedule);
 
     return () => {
-      clearTimeout(resizeTimer);
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('orientationchange', handleResize);
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      window.removeEventListener('resize', schedule);
     };
-  }, []);
+  }, [placeAll, canvasRef, captionRef, copyrightRef]);
 
-  const handleClick = useCallback((clickedId) => {
-    setGlyphs(prev => prev.map(g =>
-      g.id === clickedId ? { ...g, visible: false } : g
-    ));
+  // Mark newly-added glyphs as mounted after first paint so the CSS opacity
+  // transition fires (initial render keeps them at opacity:0).
+  useLayoutEffect(() => {
+    if (!glyphs.some(g => !g.mounted)) return;
+    const raf = requestAnimationFrame(() => {
+      setGlyphs(prev => prev.map(g => g.mounted ? g : { ...g, mounted: true }));
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [glyphs]);
 
+  const handleClick = useCallback((id) => {
+    // Phase 1: fade the clicked glyph out
+    setGlyphs(prev => prev.map(g => g.id === id ? { ...g, fading: true } : g));
+
+    // Phase 2: after fade completes, drop it and add a fresh one elsewhere
     setTimeout(() => {
       setGlyphs(prev => {
-        const clicked = prev.find(g => g.id === clickedId);
-        const others = prev.filter(g => g.id !== clickedId);
-        const newGlyph = createGlyphAnywhere(
-          nextId.current++,
-          others,
-          clicked?.char
+        const old = prev.find(g => g.id === id);
+        const remaining = prev.filter(g => g.id !== id);
+        const zones = getZones(
+          canvasRef?.current,
+          captionRef?.current,
+          copyrightRef?.current,
         );
-        return [...others, newGlyph];
+        if (!zones) return remaining;
+
+        const placedRects = remaining.map(g => g.rect);
+        if (old) placedRects.push(old.rect); // discourage re-using exact same spot
+
+        const r = placeOne(zones.forbidden, placedRects);
+        if (!r) return remaining; // cramped — leave the slot empty
+
+        const inside = isInside(r, zones.overlayInner);
+        const usedChars = new Set(remaining.map(g => g.char));
+        if (old) usedChars.add(old.char); // discourage instant char repeat
+        const char = pickUniqueChar(usedChars);
+        return [...remaining, buildGlyph(r, char, inside)];
       });
-    }, 350);
-  }, []);
+    }, 400);
+  }, [canvasRef, captionRef, copyrightRef]);
 
   return (
-    <div className="floating-glyphs">
-      {glyphs.map(g => (
-        <span
-          key={g.id}
-          className={`floating-glyph ${g.visible ? 'visible' : ''} ${g.onCanvas ? 'on-canvas' : ''}`}
-          style={{
-            left: `${g.x}px`,
-            top: `${g.y}px`,
-            fontSize: `${g.size}px`,
-            '--drift-x': `${g.driftX}px`,
-            '--drift-y': `${g.driftY}px`,
-            '--drift-duration': `${g.driftDuration}s`,
-          }}
-          onClick={() => handleClick(g.id)}
-        >
-          {g.char}
-        </span>
-      ))}
+    <div className="glyph-layer" aria-hidden="true">
+      {glyphs.map(g => {
+        const cls = g.fading
+          ? 'glyph-floater fading'
+          : g.mounted
+            ? 'glyph-floater visible'
+            : 'glyph-floater';
+        return (
+          <span
+            key={g.id}
+            className={cls}
+            style={{
+              left:     g.rect.x + 'px',
+              top:      g.rect.y + 'px',
+              fontSize: getConsts().GLYPH_FONT + 'px',
+              '--glyph-color':   g.color,
+              '--glyph-opacity': g.opacity,
+              ...g.drift,
+            }}
+            onClick={() => handleClick(g.id)}
+          >
+            {g.char}
+          </span>
+        );
+      })}
     </div>
   );
 };
