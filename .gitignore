@@ -81,3 +81,15 @@ jspm_packages/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Local audit artifacts (Chrome DevTools screenshots)
+.audit/
+
+# Ticket-driven-dev plugin local data
+.tdd/
+
+# Stray hook-expanded env-var dirs from local Claude Code sessions
+${CLAUDE_PROJECT_DIR}/
+
+# Claude Code local config
+.claude/
