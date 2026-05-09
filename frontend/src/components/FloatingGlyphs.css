@@ -1,0 +1,36 @@
+.glyph-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.glyph-floater {
+  position: absolute;
+  font-family: 'Noto Sans Egyptian Hieroglyphs', serif;
+  color: var(--glyph-color, #999);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  user-select: none;
+  cursor: pointer;
+  pointer-events: auto;
+  animation: glyph-drift var(--dur, 8s) ease-in-out infinite alternate;
+  animation-delay: var(--delay, 0s);
+  will-change: transform, opacity;
+}
+
+.glyph-floater.visible {
+  opacity: var(--glyph-opacity, 0.85);
+}
+
+.glyph-floater.fading {
+  opacity: 0;
+}
+
+@keyframes glyph-drift {
+  to { transform: translate(var(--dx, 0), var(--dy, 0)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glyph-floater { animation: none; }
+}
