@@ -9,10 +9,15 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5001;
 
-// Check for Dropbox access token
-if (!process.env.DROPBOX_ACCESS_TOKEN) {
-    console.error('ERROR: DROPBOX_ACCESS_TOKEN not found in environment variables');
-    console.error('Please create a .env file with your Dropbox access token');
+// Check for Dropbox credentials (either access token or refresh token flow)
+const hasAccessToken = !!process.env.DROPBOX_ACCESS_TOKEN;
+const hasRefreshFlow = !!process.env.DROPBOX_REFRESH_TOKEN && !!process.env.DROPBOX_APP_KEY && !!process.env.DROPBOX_APP_SECRET;
+
+if (!hasAccessToken && !hasRefreshFlow) {
+    console.error('ERROR: Dropbox credentials not found in environment variables');
+    console.error('Please set either:');
+    console.error('  - DROPBOX_ACCESS_TOKEN (legacy short-lived token)');
+    console.error('  - DROPBOX_REFRESH_TOKEN + DROPBOX_APP_KEY + DROPBOX_APP_SECRET (recommended)');
     process.exit(1);
 }
 
@@ -20,11 +25,60 @@ if (!process.env.DROPBOX_ACCESS_TOKEN) {
 app.use(cors());
 app.use(express.json());
 
-// Initialize Dropbox client
-const dbx = new Dropbox({ 
-    accessToken: process.env.DROPBOX_ACCESS_TOKEN,
-    fetch: fetch 
-});
+// Token cache for refresh flow
+let tokenCache = {
+    accessToken: null,
+    expiresAt: null
+};
+
+// Function to refresh access token
+async function refreshAccessToken() {
+    const response = await fetch('https://api.dropbox.com/oauth2/token', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: process.env.DROPBOX_REFRESH_TOKEN,
+            client_id: process.env.DROPBOX_APP_KEY,
+            client_secret: process.env.DROPBOX_APP_SECRET
+        })
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to refresh token: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    tokenCache.accessToken = data.access_token;
+    tokenCache.expiresAt = Date.now() + (data.expires_in * 1000) - (5 * 60 * 1000); // 5 min buffer
+    console.log('🔑 Access token refreshed, expires in', data.expires_in, 'seconds');
+    return data.access_token;
+}
+
+// Function to get valid access token
+async function getValidAccessToken() {
+    if (hasAccessToken && !hasRefreshFlow) {
+        return process.env.DROPBOX_ACCESS_TOKEN;
+    }
+    if (tokenCache.accessToken && tokenCache.expiresAt && Date.now() < tokenCache.expiresAt) {
+        return tokenCache.accessToken;
+    }
+    return refreshAccessToken();
+}
+
+// Initialize Dropbox client (will be updated with valid token)
+let dbx = null;
+
+async function initDropbox() {
+    const token = await getValidAccessToken();
+    dbx = new Dropbox({
+        accessToken: token,
+        fetch: fetch
+    });
+}
 
 // Cache for images
 let imageCache = {
@@ -180,11 +234,14 @@ app.get('/api/images', async (req, res) => {
     }
 });
 
-// Initialize cache on startup
-refreshImageCache().catch(console.error);
-
-// Start server
-app.listen(PORT, () => {
+// Initialize Dropbox and cache on startup
+async function startup() {
+    await initDropbox();
     console.log(`🚀 Server running at http://localhost:${PORT}`);
-    console.log('📁 Using Dropbox access token from environment');
+    console.log(`📁 Using Dropbox ${hasRefreshFlow ? 'refresh token' : 'access token'} flow`);
+    refreshImageCache().catch(console.error);
+}
+
+app.listen(PORT, () => {
+    startup();
 });
