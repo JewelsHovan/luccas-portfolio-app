@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import './Collections.css';
 
 const Collections = () => {
-  const [selectedCollection, setSelectedCollection] = useState('');
+  const { type } = useParams();
+  const selectedCollection = type || '';
   const [images, setImages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -10,7 +12,7 @@ const Collections = () => {
   const containerRef = useRef(null);
   const imageRefs = useRef([]);
 
-  // Fetch images from API
+  // Fetch images from API based on URL param
   useEffect(() => {
     if (!selectedCollection) return;
 
@@ -19,11 +21,11 @@ const Collections = () => {
         setLoading(true);
         setError(null);
         const response = await fetch(`https://luccas-portfolio-backend.julienh15.workers.dev/api/${selectedCollection}`);
-        
+
         if (!response.ok) {
           throw new Error('Failed to fetch images');
         }
-        
+
         const data = await response.json();
         setImages(data.images || []);
         setCurrentIndex(0);
@@ -37,15 +39,13 @@ const Collections = () => {
     fetchImages();
   }, [selectedCollection]);
 
-  // Handle scroll for endless scroll effect
+  // Track which image is most visible while scrolling
   const handleScroll = useCallback(() => {
     if (!containerRef.current || images.length === 0) return;
 
     const container = containerRef.current;
-    const scrollTop = container.scrollTop;
     const containerHeight = container.clientHeight;
 
-    // Find which image is currently most visible
     let newIndex = 0;
     for (let i = 0; i < imageRefs.current.length; i++) {
       const imageEl = imageRefs.current[i];
@@ -55,8 +55,7 @@ const Collections = () => {
       const containerRect = container.getBoundingClientRect();
       const imageTop = rect.top - containerRect.top;
       const imageBottom = rect.bottom - containerRect.top;
-      
-      // Check if image center is in the viewport
+
       const imageCenter = (imageTop + imageBottom) / 2;
       if (imageCenter >= 0 && imageCenter <= containerHeight) {
         newIndex = i;
@@ -67,7 +66,6 @@ const Collections = () => {
     setCurrentIndex(newIndex);
   }, [images]);
 
-  // Scroll to specific image
   const scrollToImage = (index) => {
     if (imageRefs.current[index] && containerRef.current) {
       imageRefs.current[index].scrollIntoView({
@@ -77,7 +75,6 @@ const Collections = () => {
     }
   };
 
-  // Handle keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'ArrowDown' && currentIndex < images.length - 1) {
@@ -93,32 +90,9 @@ const Collections = () => {
 
   return (
     <div className="collections-page">
-      <div className="collections-header">
-        <nav className="collections-nav">
-          <button 
-            className={`collection-link ${selectedCollection === 'paintings' ? 'active' : ''}`}
-            onClick={() => setSelectedCollection('paintings')}
-          >
-            Paintings
-          </button>
-          <button 
-            className={`collection-link ${selectedCollection === 'photo' ? 'active' : ''}`}
-            onClick={() => setSelectedCollection('photo')}
-          >
-            Photo
-          </button>
-          <button 
-            className={`collection-link ${selectedCollection === 'sketchbooks' ? 'active' : ''}`}
-            onClick={() => setSelectedCollection('sketchbooks')}
-          >
-            Sketchbooks
-          </button>
-        </nav>
-      </div>
-
       {!selectedCollection && (
         <div className="no-collection-selected">
-          <p>Select a collection to view</p>
+          <p>Open the menu to select a collection</p>
         </div>
       )}
 
@@ -133,13 +107,12 @@ const Collections = () => {
         <div className="collections-error">
           <h3>Error loading collection</h3>
           <p>{error}</p>
-          <button onClick={() => setSelectedCollection('')}>Back to Collections</button>
         </div>
       )}
 
       {selectedCollection && !loading && !error && (
-        <div 
-          className="collections-container" 
+        <div
+          className="collections-container"
           ref={containerRef}
           onScroll={handleScroll}
         >
@@ -150,13 +123,13 @@ const Collections = () => {
           ) : (
             <div className="images-scroll">
               {images.map((image, index) => (
-                <div 
-                  key={image.id || index} 
+                <div
+                  key={image.id || index}
                   className={`image-container ${index === currentIndex ? 'active' : ''}`}
                   ref={el => imageRefs.current[index] = el}
                 >
-                  <img 
-                    src={image.url} 
+                  <img
+                    src={image.url}
                     alt={image.name || `Image ${index + 1}`}
                     loading="lazy"
                   />
@@ -174,8 +147,8 @@ const Collections = () => {
       {/* Progress indicator */}
       {selectedCollection && !loading && images.length > 0 && (
         <div className="progress-indicator">
-          <div 
-            className="progress-bar" 
+          <div
+            className="progress-bar"
             style={{ width: `${((currentIndex + 1) / images.length) * 100}%` }}
           />
         </div>

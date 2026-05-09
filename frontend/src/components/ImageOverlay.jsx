@@ -1,8 +1,9 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import './ImageOverlay.css';
 
-const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = true, onRefresh = null }) => {
-  const canvasRef = useRef(null);
+const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = true, onRefresh = null, canvasRef: externalCanvasRef = null }) => {
+  const internalCanvasRef = useRef(null);
+  const canvasRef = externalCanvasRef || internalCanvasRef;
   const flashRef = useRef(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
@@ -65,16 +66,12 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
 
     setIsGenerating(true);
     const canvas = canvasRef.current;
-    
-    // Get context with performance hints
-    const ctx = canvas.getContext('2d', { 
-      alpha: false, // No transparency needed, improves performance
-      desynchronized: true // Allows async rendering
-    });
 
-    // Clear canvas with background color
-    ctx.fillStyle = '#c4b5b5';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Transparent context so any unpainted area shows page background, not pink.
+    const ctx = canvas.getContext('2d', {
+      alpha: true,
+      desynchronized: true
+    });
 
     try {
       // Load both images in parallel
@@ -83,26 +80,21 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
         loadImageWithRetry(overlayImage, false)
       ]);
 
-      // Calculate base image dimensions
+      // Resize the canvas to match the base image's aspect ratio so the
+      // image fills the entire canvas — no letterbox/pillarbox bands.
+      const isMobileCalc = window.innerWidth <= 768;
+      const maxWidth = isMobileCalc ? 800 : 1200;
       const baseAspectRatio = baseImg.width / baseImg.height;
-      const canvasAspectRatio = canvas.width / canvas.height;
-      
-      let baseDrawWidth, baseDrawHeight, baseX, baseY;
-      
-      if (baseAspectRatio > canvasAspectRatio) {
-        baseDrawWidth = canvas.width;
-        baseDrawHeight = canvas.width / baseAspectRatio;
-        baseX = 0;
-        baseY = (canvas.height - baseDrawHeight) / 2;
-      } else {
-        baseDrawHeight = canvas.height;
-        baseDrawWidth = canvas.height * baseAspectRatio;
-        baseX = (canvas.width - baseDrawWidth) / 2;
-        baseY = 0;
-      }
-      
-      // Draw base image
-      ctx.drawImage(baseImg, baseX, baseY, baseDrawWidth, baseDrawHeight);
+      const targetWidth = Math.min(maxWidth, baseImg.width);
+      const targetHeight = Math.round(targetWidth / baseAspectRatio);
+
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw base image full-bleed
+      ctx.drawImage(baseImg, 0, 0, canvas.width, canvas.height);
 
       // Calculate overlay dimensions
       const maxOverlaySize = Math.min(canvas.width, canvas.height) * settings.scale;
