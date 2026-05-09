@@ -114,8 +114,11 @@
   }
   
   .overlay-canvas {
-    max-width: 100%;
-    width: 100%;
+    /* On mobile, render the canvas at 85% of available width so the image
+       doesn't dominate the viewport. Height follows via height:auto + the
+       canvas's intrinsic aspect ratio, scaling both dimensions by ~15%. */
+    max-width: 85%;
+    width: 85%;
     height: auto;
     /* Prevent canvas stretching on iOS */
     image-rendering: -webkit-optimize-contrast;
