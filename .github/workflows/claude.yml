@@ -1,0 +1,49 @@
+name: Claude Code
+
+# An "@claude" GitHub Issue triggers the Claude Code agent, which implements the
+# change on a branch and opens a PR. The frontend is a Cloudflare Pages project
+# with Git integration, so the agent's PR branch gets an automatic Pages preview
+# deployment — production (luccasbooth.com) is untouched until merge.
+
+on:
+  issues:
+    types: [opened, assigned]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  claude:
+    if: |
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude'))) ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Relies on the installed Claude GitHub App token. If the PR it opens
+          # does not trigger downstream workflows, add secrets.CLAUDE_PR_TOKEN
+          # (a scoped token) and set `github_token:` here.
+          claude_args: |
+            --model claude-sonnet-5
+            --max-turns 20
+            --allowedTools "Edit,Write,Read,Glob,Grep,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git:*)"
+            --append-system-prompt "You implement a change on Luccas's art portfolio (luccasbooth.com): a Vite + React frontend in frontend/ (uses npm) deployed on Cloudflare Pages, plus a legacy Cloudflare Worker backend in backend/ that is being retired in favor of the Luccas Asset Hub. Almost every request is frontend/visual. Follow the issue's spec exactly — minimal diff, no scope creep, no refactoring. Run `npm run build` in frontend/ (or the affected package) before finishing. Open a PR whose description restates the spec and lists acceptance criteria as a checklist. If the request is unsafe or out of scope, stop and comment instead of guessing."
