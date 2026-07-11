@@ -23,7 +23,7 @@ jobs:
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude'))
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: write
       pull-requests: write
@@ -44,6 +44,6 @@ jobs:
           # (a scoped token) and set `github_token:` here.
           claude_args: |
             --model claude-sonnet-5
-            --max-turns 20
+            --max-turns 80
             --allowedTools "Edit,Write,Read,Glob,Grep,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git:*)"
             --append-system-prompt "You implement a change on Luccas's art portfolio (luccasbooth.com): a Vite + React frontend in frontend/ (uses npm) deployed on Cloudflare Pages, plus a legacy Cloudflare Worker backend in backend/ that is being retired in favor of the Luccas Asset Hub. Almost every request is frontend/visual. Follow the issue's spec exactly — minimal diff, no scope creep, no refactoring. Run `npm run build` in frontend/ (or the affected package) before finishing. Open a PR whose description restates the spec and lists acceptance criteria as a checklist. If the request is unsafe or out of scope, stop and comment instead of guessing."
