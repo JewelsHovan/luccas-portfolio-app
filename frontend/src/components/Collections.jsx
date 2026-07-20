@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
+import apiService from '../services/api';
 import './Collections.css';
 
 const Collections = () => {
@@ -20,14 +21,8 @@ const Collections = () => {
       try {
         setLoading(true);
         setError(null);
-        const response = await fetch(`https://luccas-portfolio-backend.julienh15.workers.dev/api/${selectedCollection}`);
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch images');
-        }
-
-        const data = await response.json();
-        setImages(data.images || []);
+        const collectionImages = await apiService.fetchCollectionImages(selectedCollection);
+        setImages(collectionImages);
         setCurrentIndex(0);
       } catch (err) {
         setError(err.message);

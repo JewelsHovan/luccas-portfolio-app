@@ -8,7 +8,7 @@ export const useImages = () => {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
+
   // Store all available images
   const allImagesRef = useRef({
     baseImages: [],
@@ -20,27 +20,23 @@ export const useImages = () => {
     try {
       setLoading(true);
       setError(null);
-      
-      // Fetch all images
+
       const data = await apiService.fetchAllImages();
       console.log('Fetched all images:', {
         baseCount: data.baseImages?.length,
         overlayCount: data.overlayImages?.length
       });
-      
-      // Store all images
+
       allImagesRef.current = {
         baseImages: data.baseImages || [],
         overlayImages: data.overlayImages || []
       };
-      
-      // Get initial random pair
+
       const initialPair = await apiService.generateOverlay();
       setImages({
         baseImage: initialPair.baseImage,
         overlayImage: initialPair.overlayImage
       });
-      
     } catch (err) {
       setError(err.message);
       console.error('Failed to initialize images:', err);
@@ -49,22 +45,20 @@ export const useImages = () => {
     }
   };
 
-  // Get new random pair
+  // Get a new pair from the server-side queue
   const generateNewOverlay = async () => {
     try {
       setError(null);
-      
       const data = await apiService.generateOverlay();
       console.log('Generated new overlay:', {
         base: data.baseImage?.name,
         overlay: data.overlayImage?.name
       });
-      
+
       setImages({
         baseImage: data.baseImage,
         overlayImage: data.overlayImage
       });
-      
     } catch (err) {
       setError(err.message);
       console.error('Failed to generate overlay:', err);

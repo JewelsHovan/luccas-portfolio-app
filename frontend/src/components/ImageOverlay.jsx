@@ -8,7 +8,7 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
   const [isGenerating, setIsGenerating] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const [isFlashing, setIsFlashing] = useState(false);
-  const [settings, setSettings] = useState({
+  const [settings] = useState({
     opacity: 0.75,
     scale: 0.55,
     blendMode: 'source-over',
@@ -16,9 +16,10 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
   });
 
   const loadImageWithRetry = useCallback(async (imageData, isBase = true) => {
+    // The Hub returns public R2 URLs. Load them directly: this R2 host does not
+    // opt into anonymous CORS, and forcing crossOrigin would reject valid images.
     const img = new Image();
-    img.crossOrigin = 'anonymous'; // Critical for CORS on mobile
-    
+
     return new Promise((resolve, reject) => {
       let attempts = 0;
       const maxAttempts = 3;
@@ -142,7 +143,7 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
     } finally {
       setIsGenerating(false);
     }
-  }, [baseImage, overlayImage, settings, loadImageWithRetry, retryCount]);
+  }, [baseImage, overlayImage, settings, loadImageWithRetry, retryCount, canvasRef]);
 
   useEffect(() => {
     if (!baseImage || !overlayImage) return;
@@ -161,7 +162,9 @@ const ImageOverlay = ({ baseImage = null, overlayImage = null, showControls = tr
       
       return () => clearTimeout(timer);
     }
-  }, [baseImage?.url, overlayImage?.url]); // Use URLs as dependencies
+    // Asset URL changes should trigger rendering; generation state changes must not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseImage?.url, overlayImage?.url]);
 
   const downloadImage = () => {
     const canvas = canvasRef.current;
