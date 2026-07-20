@@ -6,6 +6,7 @@ backend/node_modules/
 # Environment variables
 .env
 frontend/.env
+frontend/.env*.local
 backend/.env
 
 # Build outputs
@@ -84,6 +85,9 @@ Thumbs.db
 
 # Local audit artifacts (Chrome DevTools screenshots)
 .audit/
+
+# Local Pi agent state (may contain session inputs or secrets)
+.pi/
 
 # Ticket-driven-dev plugin local data
 .tdd/

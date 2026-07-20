@@ -1,115 +1,75 @@
 # Luccas Portfolio App
 
-A modern React application showcasing dynamic image overlays with Dropbox integration.
+React/Vite portfolio with a server-side media API backed by the Luccas Asset Hub and Cloudflare R2.
 
-## Project Structure
+## Project structure
 
-```
-luccas-portfolio-app/
-├── frontend/          # React frontend (Vite)
-│   ├── src/
-│   │   ├── components/    # React components
-│   │   ├── hooks/         # Custom React hooks
-│   │   ├── services/      # API services
-│   │   └── utils/         # Utility functions
-├── backend/           # Node.js/Express API
-│   ├── server.js      # Main server file
-│   └── .env.example   # Environment variables template
-└── README.md
+```text
+frontend/                 React UI
+backend/server.js         Local Node HTTP adapter
+backend/worker-fixed.js   Production Cloudflare Worker
+backend/lib/              Typed Asset Hub client and portfolio adapters
+docs/README.md            Asset Hub auth and token operations
 ```
 
-## Features
+## Local development
 
-- **Clean Design**: Minimalist interface inspired by modern portfolio sites
-- **Dynamic Overlays**: Real-time image composition with blend modes
-- **Dropbox Integration**: Automatic image fetching from cloud storage
-- **Responsive Design**: Works perfectly on desktop and mobile
-- **Modern Tech Stack**: React 18, Vite, Express, ES modules
-
-## Quick Start
-
-### 1. Backend Setup
+Requires Node.js 18 or newer.
 
 ```bash
-cd backend
-cp .env.example .env
-# Edit .env and add your Dropbox access token
-npm install
+npm run install:all
+cp backend/.env.example backend/.env
+# Add the server-only LUCCAS_HUB_TOKEN to backend/.env
 npm run dev
 ```
 
-### 2. Frontend Setup
+The frontend runs at `http://localhost:5173` and the local API at `http://localhost:5001`. `frontend/.env.development` points Vite at the local API.
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+## Environment variables
 
-### 3. Get Dropbox Access Token
+### Backend
 
-1. Go to [Dropbox Developers](https://www.dropbox.com/developers/apps)
-2. Create a new app with "Scoped access"
-3. Generate an access token
-4. Add it to `backend/.env`
-
-## API Endpoints
-
-- `GET /api/health` - Health check
-- `GET /api/images` - Fetch all images from Dropbox folders
-
-## Environment Variables
-
-### Backend (.env)
-```
-DROPBOX_ACCESS_TOKEN=your_token_here
+```dotenv
+LUCCAS_HUB_TOKEN=<portfolio-scoped token>
 PORT=5001
 ```
 
-### Frontend (.env)
-```
+`LUCCAS_HUB_TOKEN` is secret and server-only. Do not give it a `VITE_` prefix. See [`docs/README.md`](docs/README.md) for scope and rotation details.
+
+### Frontend
+
+```dotenv
 VITE_API_URL=http://localhost:5001
 ```
 
-## Development
+This is only the public URL of the portfolio backend. The browser never calls the Asset Hub API with credentials.
 
-- **Frontend**: http://localhost:5173
-- **Backend**: http://localhost:5001
-- **Hot reload**: Both frontend and backend support auto-reload
+## API endpoints
 
-## Folder Structure in Dropbox
+- `GET /api/health` — server configuration status
+- `GET /api/images` — homepage base and overlay image lists
+- `GET /api/generateOverlay` — next server-generated homepage pair
+- `GET /api/:collection` — `paintings`, `photo`, `assemblage`, `drawings`, `sketchbooks`, or `j24`
 
-The app expects these folders in your Dropbox:
-- `/Homepage/large_rectangle_database` - Background images
-- `/Homepage/small_rectangle_database` - Overlay images
+Responses preserve the frontend's existing image shape while setting each image's `url` and optional `thumb_url` directly from the Hub response. Media bytes load straight from public R2 URLs rather than through this backend.
+
+## Validation
+
+```bash
+cd backend && npm test
+npm run build
+cd frontend && npm run lint
+cd ../backend && npx wrangler deploy --dry-run
+```
 
 ## Deployment
 
-### Frontend (Vercel/Netlify)
-```bash
-cd frontend
-npm run build
-# Deploy dist/ folder
-```
+Set the Worker secret, then deploy:
 
-### Backend (Railway/Heroku)
 ```bash
 cd backend
-# Set DROPBOX_ACCESS_TOKEN environment variable
-# Deploy with npm start
+npx wrangler secret put LUCCAS_HUB_TOKEN
+npx wrangler deploy --env production
 ```
 
-## Tech Stack
-
-### Frontend
-- React 18
-- Vite
-- CSS3 (Custom styling)
-- Canvas API for image manipulation
-
-### Backend
-- Node.js
-- Express
-- Dropbox API
-- ES modules
-- CORS enabled
+Build the frontend with `VITE_API_URL` set to the deployed Worker URL.

@@ -1,33 +1,37 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
 class ApiService {
-  async fetchWithTimeout(url, options = {}, timeout = 15000) {
+  async request(path, timeout = 15000) {
     const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
-    
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
     try {
-      const response = await fetch(url, {
-        ...options,
+      const response = await fetch(`${API_BASE_URL}${path}`, {
         signal: controller.signal
       });
-      clearTimeout(id);
-      return response;
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        const message = data.details
+          ? `${data.error || 'API request failed'}: ${data.details}`
+          : data.error || `API request failed with status ${response.status}`;
+        throw new Error(message);
+      }
+
+      return data;
     } catch (error) {
-      clearTimeout(id);
       if (error.name === 'AbortError') {
         throw new Error('Request timeout - please check your connection');
       }
       throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
   async fetchAllImages() {
     try {
-      const response = await this.fetchWithTimeout(`${API_BASE_URL}/api/images`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch images');
-      }
-      return await response.json();
+      return await this.request('/api/images');
     } catch (error) {
       console.error('API Error:', error);
       throw error;
@@ -36,11 +40,17 @@ class ApiService {
 
   async generateOverlay() {
     try {
-      const response = await this.fetchWithTimeout(`${API_BASE_URL}/api/generateOverlay`);
-      if (!response.ok) {
-        throw new Error('Failed to generate overlay');
-      }
-      return await response.json();
+      return await this.request('/api/generateOverlay');
+    } catch (error) {
+      console.error('API Error:', error);
+      throw error;
+    }
+  }
+
+  async fetchCollectionImages(slug) {
+    try {
+      const data = await this.request(`/api/${encodeURIComponent(slug)}`);
+      return data.images || [];
     } catch (error) {
       console.error('API Error:', error);
       throw error;
@@ -49,8 +59,7 @@ class ApiService {
 
   async healthCheck() {
     try {
-      const response = await this.fetchWithTimeout(`${API_BASE_URL}/api/health`);
-      return await response.json();
+      return await this.request('/api/health');
     } catch (error) {
       console.error('Health check failed:', error);
       throw error;
