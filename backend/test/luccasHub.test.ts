@@ -40,6 +40,24 @@ test('client sends server token and builds collection pagination query', async (
   assert.equal(requestedAuthorization, 'Bearer server-secret');
 });
 
+test('default fetch preserves the runtime receiver required by Cloudflare Workers', async () => {
+  const originalFetch = globalThis.fetch;
+  let receiverWasGlobal = false;
+
+  globalThis.fetch = function runtimeFetch(this: typeof globalThis) {
+    receiverWasGlobal = this === globalThis;
+    return Promise.resolve(Response.json({ collections: [] }));
+  } as typeof fetch;
+
+  try {
+    const client = createLuccasHubClient({ token: 'server-secret' });
+    await client.listCollections();
+    assert.equal(receiverWasGlobal, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('client exposes all four Hub operations', async () => {
   const requestedPaths: string[] = [];
   const fetchImpl: typeof fetch = async (input) => {

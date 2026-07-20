@@ -108,14 +108,16 @@ export class LuccasHubClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
 
-  constructor({ token, baseUrl = DEFAULT_BASE_URL, fetchImpl = fetch }: LuccasHubClientOptions) {
+  constructor({ token, baseUrl = DEFAULT_BASE_URL, fetchImpl }: LuccasHubClientOptions) {
     if (!token?.trim()) {
       throw new Error('LUCCAS_HUB_TOKEN is not configured on the server.');
     }
 
     this.token = token;
     this.baseUrl = baseUrl.replace(/\/+$/, '');
-    this.fetchImpl = fetchImpl;
+    // Workers runtime fetch is receiver-sensitive. Calling a stored bare reference
+    // as this.fetchImpl(...) changes `this` and causes an Illegal invocation.
+    this.fetchImpl = fetchImpl ?? ((input, init) => globalThis.fetch(input, init));
   }
 
   private async request<T>(path: string, query: Record<string, string | number | undefined> = {}): Promise<T> {
