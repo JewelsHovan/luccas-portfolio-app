@@ -124,7 +124,9 @@ export class LuccasHubClient {
     const url = new URL(`${this.baseUrl}${path}`);
     appendQuery(url, query);
 
-    const response = await this.fetchImpl(url, {
+    // Pass an absolute string rather than a URL object for consistent behavior in
+    // Node and Cloudflare Workers runtime fetch implementations.
+    const response = await this.fetchImpl(url.toString(), {
       method: 'GET',
       headers: {
         Accept: 'application/json',

@@ -43,9 +43,11 @@ test('client sends server token and builds collection pagination query', async (
 test('default fetch preserves the runtime receiver required by Cloudflare Workers', async () => {
   const originalFetch = globalThis.fetch;
   let receiverWasGlobal = false;
+  let inputWasAbsoluteString = false;
 
-  globalThis.fetch = function runtimeFetch(this: typeof globalThis) {
+  globalThis.fetch = function runtimeFetch(this: typeof globalThis, input) {
     receiverWasGlobal = this === globalThis;
+    inputWasAbsoluteString = typeof input === 'string' && input.startsWith('https://');
     return Promise.resolve(Response.json({ collections: [] }));
   } as typeof fetch;
 
@@ -53,6 +55,7 @@ test('default fetch preserves the runtime receiver required by Cloudflare Worker
     const client = createLuccasHubClient({ token: 'server-secret' });
     await client.listCollections();
     assert.equal(receiverWasGlobal, true);
+    assert.equal(inputWasAbsoluteString, true);
   } finally {
     globalThis.fetch = originalFetch;
   }
