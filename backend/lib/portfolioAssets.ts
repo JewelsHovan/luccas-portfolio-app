@@ -1,19 +1,20 @@
-import { LuccasHubError, type LuccasHubClient, type LuccasHubFile } from './luccasHub.ts';
+import { type LuccasHubClient, LuccasHubError, type LuccasHubFile } from './luccasHub.ts';
 
 export const HOMEPAGE_HUB_COLLECTIONS = {
   base: ['art-website-homepage-large-rectangle-database'],
   overlay: ['art-website-homepage-small-rectangle-database'],
 } as const;
 
-// Parent collections are included where the former recursive folder behavior
-// covered both direct files and child folders. Duplicate file IDs are removed.
+// Canonical root slugs also keep the old public routes stable. Gallery reads
+// discover current descendants by collection name, not these historical child
+// lists. Homepage lists deliberately retain their original behavior.
 export const PORTFOLIO_HUB_COLLECTIONS = {
   paintings: ['art-website-paintings'],
   photo: [
     'art-website-photo',
     'art-website-photo-b-w-film',
     'art-website-photo-color-film',
-    'art-website-photo-summers-passed',
+    // Summers Passed was removed; its active photos are now in B&W Film.
   ],
   assemblage: ['art-website-assemblage'],
   drawings: [
@@ -51,8 +52,19 @@ export interface HubServerError {
   details: string;
 }
 
+export class PortfolioRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = 'PortfolioRequestError';
+  }
+}
+
+export function isRenderableHubImage(file: LuccasHubFile): boolean {
+  return Boolean(file.mime_type?.startsWith('image/') && file.url);
+}
+
 export function isPortfolioCollectionSlug(slug: string): slug is PortfolioCollectionSlug {
-  return Object.prototype.hasOwnProperty.call(PORTFOLIO_HUB_COLLECTIONS, slug);
+  return Object.hasOwn(PORTFOLIO_HUB_COLLECTIONS, slug);
 }
 
 export function mapHubFileToPortfolioImage(file: LuccasHubFile): PortfolioImage {
@@ -78,6 +90,10 @@ export function mapHubFileToPortfolioImage(file: LuccasHubFile): PortfolioImage 
 }
 
 export function toHubServerError(error: unknown, resource: string): HubServerError {
+  if (error instanceof PortfolioRequestError) {
+    return { status: error.status, error: error.message, details: '' };
+  }
+
   if (error instanceof LuccasHubError && error.status === 401) {
     return {
       status: 502,
@@ -101,17 +117,31 @@ export function toHubServerError(error: unknown, resource: string): HubServerErr
   };
 }
 
+export interface PortfolioListOptions {
+  order?: 'display';
+  limit?: number;
+  imagesOnly?: boolean;
+  beforeRequest?: () => void;
+}
+
 export async function listAllPortfolioImages(
   client: LuccasHubClient,
   slug: string,
+  options: PortfolioListOptions = {},
 ): Promise<PortfolioImage[]> {
   const images: PortfolioImage[] = [];
   const seenCursors = new Set<string>();
   let cursor: string | undefined;
 
   do {
-    const page = await client.listFilesByCollection(slug, { limit: 50, cursor });
-    images.push(...page.files.map(mapHubFileToPortfolioImage));
+    options.beforeRequest?.();
+    const page = await client.listFilesByCollection(slug, {
+      limit: options.limit ?? 50,
+      cursor,
+      order: options.order,
+    });
+    const files = options.imagesOnly ? page.files.filter(isRenderableHubImage) : page.files;
+    images.push(...files.map(mapHubFileToPortfolioImage));
 
     cursor = page.next_cursor ?? undefined;
     if (cursor) {
@@ -128,8 +158,13 @@ export async function listAllPortfolioImages(
 export async function listPortfolioImagesFromCollections(
   client: LuccasHubClient,
   slugs: readonly string[],
+  options: PortfolioListOptions = {},
 ): Promise<PortfolioImage[]> {
-  const pages = await Promise.all(slugs.map((slug) => listAllPortfolioImages(client, slug)));
+  // Bounded, deterministic traversal; don't start an unbounded Hub fan-out.
+  const pages: PortfolioImage[][] = [];
+  for (const slug of slugs) {
+    pages.push(await listAllPortfolioImages(client, slug, options));
+  }
   const imagesById = new Map<string, PortfolioImage>();
 
   for (const images of pages) {

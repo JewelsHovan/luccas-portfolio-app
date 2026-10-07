@@ -49,17 +49,24 @@ This is only the public URL of the portfolio backend. The browser never calls th
 - `GET /api/health` — server configuration status
 - `GET /api/images` — homepage base and overlay image lists
 - `GET /api/generateOverlay` — next server-generated homepage pair
-- `GET /api/:collection` — `paintings`, `photo`, `assemblage`, `drawings`, `sketchbooks`, or `j24`
+- `GET /api/:collection` — `paintings`, `photo`, `assemblage`, `drawings`, `sketchbooks`, or `j24`, in Boolien Box's saved image order
+- `GET /api/library[?cursor=<id>]` — individual book summaries/covers; continue through `next_cursor`, including empty batches
+- `GET /api/library/:id` — one Library book's ordered pages, addressed by stable collection ID
+
+Library books appear together on `/library`; opening a cover uses `/library?book=<id>`. Empty grouping folders do not appear as books. Existing J24/Sketchbooks bookmarks still work, and Symbols remains a separate page. Galleries no longer dim or zoom images while scrolling.
+
+Media metadata uses short server caches on reload (up to about two minutes of portfolio caching for composed folder/shelf changes, plus upstream propagation and request time); `?refresh=true` bypasses those caches. See [architecture](docs/ARCHITECTURE.md) for discovery, freshness, and request-budget details.
 
 Responses preserve the frontend's existing image shape while setting each image's `url` and optional `thumb_url` directly from the Hub response. Media bytes load straight from public R2 URLs rather than through this backend.
 
 ## Validation
 
 ```bash
-cd backend && npm test
-npm run build
-cd frontend && npm run lint
-cd ../backend && npx wrangler deploy --dry-run
+npm test --prefix backend
+npm test --prefix frontend
+npm run lint --prefix frontend
+npm run build --prefix frontend
+(cd backend && npx wrangler deploy --dry-run)
 ```
 
 ## Deployment

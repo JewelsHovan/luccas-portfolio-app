@@ -1,4 +1,4 @@
-import { createLuccasHubClient, type LuccasHubClient } from './luccasHub.ts';
+import { createLuccasHubClient, type LuccasHubClient, type LuccasHubCollection } from './luccasHub.ts';
 import {
   HOMEPAGE_HUB_COLLECTIONS,
   isPortfolioCollectionSlug,
@@ -6,11 +6,14 @@ import {
   PORTFOLIO_HUB_COLLECTIONS,
   type PortfolioCollectionSlug,
   type PortfolioImage,
+  PortfolioRequestError,
 } from './portfolioAssets.ts';
+import { collectionPath, collectionsUnder, GALLERY_ROOTS, mediaReadBudget, pathContains } from './portfolioCollections.ts';
+import { type LibraryBookPages, type LibraryShelf, libraryCollections, loadLibraryBook, loadLibraryShelf } from './portfolioLibrary.ts';
 
 interface CacheEntry<T> {
   value: T;
-  fetchedAt: number;
+  expiresAt: number;
 }
 
 interface CacheResult<T> {
@@ -39,6 +42,8 @@ export interface PairResult extends ImagePair {
 export interface PortfolioAssetServiceOptions {
   token: string;
   cacheTimeoutMs?: number;
+  mediaCacheTimeoutMs?: number;
+  now?: () => number;
   client?: LuccasHubClient;
 }
 
@@ -69,19 +74,23 @@ function createPairs(baseImages: PortfolioImage[], overlayImages: PortfolioImage
 export class PortfolioAssetService {
   private readonly client: LuccasHubClient;
   private readonly cacheTimeoutMs: number;
+  private readonly mediaCacheTimeoutMs: number;
+  private readonly now: () => number;
   private readonly cache = new Map<string, CacheEntry<unknown>>();
   private readonly pending = new Map<string, Promise<unknown>>();
   private pairQueue: ImagePair[] = [];
   private pairIndex = 0;
 
-  constructor({ token, cacheTimeoutMs = 4 * 60 * 60 * 1000, client }: PortfolioAssetServiceOptions) {
+  constructor({ token, cacheTimeoutMs = 4 * 60 * 60 * 1000, mediaCacheTimeoutMs = 60_000, now = Date.now, client }: PortfolioAssetServiceOptions) {
     this.client = client ?? createLuccasHubClient({ token });
     this.cacheTimeoutMs = cacheTimeoutMs;
+    this.mediaCacheTimeoutMs = mediaCacheTimeoutMs;
+    this.now = now;
   }
 
-  private async getCached<T>(key: string, forceRefresh: boolean, load: () => Promise<T>): Promise<CacheResult<T>> {
+  private async getCached<T>(key: string, forceRefresh: boolean, load: () => Promise<T>, timeoutMs = this.cacheTimeoutMs): Promise<CacheResult<T>> {
     const cached = this.cache.get(key) as CacheEntry<T> | undefined;
-    if (!forceRefresh && cached && Date.now() - cached.fetchedAt < this.cacheTimeoutMs) {
+    if (!forceRefresh && cached && this.now() < cached.expiresAt) {
       return { data: cached.value, cached: true };
     }
 
@@ -95,7 +104,11 @@ export class PortfolioAssetService {
 
     try {
       const value = await request;
-      this.cache.set(key, { value, fetchedAt: Date.now() });
+      const now = this.now();
+      for (const [cachedKey, entry] of this.cache) {
+        if (entry.expiresAt <= now) this.cache.delete(cachedKey);
+      }
+      this.cache.set(key, { value, expiresAt: now + timeoutMs });
       return { data: value, cached: false };
     } finally {
       this.pending.delete(key);
@@ -153,11 +166,40 @@ export class PortfolioAssetService {
       throw new Error(`Unknown portfolio collection "${slug}".`);
     }
 
-    return this.getCached(`collection:${slug}`, forceRefresh, () =>
-      listPortfolioImagesFromCollections(
-        this.client,
-        PORTFOLIO_HUB_COLLECTIONS[slug as PortfolioCollectionSlug],
-      ),
-    );
+    return this.getCached(`collection:${slug}`, forceRefresh, async () => {
+      const collections = await this.listHubCollections(forceRefresh);
+      const key = slug as PortfolioCollectionSlug;
+      const canonicalRoot = collections.find((collection) => collection.slug === PORTFOLIO_HUB_COLLECTIONS[key][0]);
+      const root = canonicalRoot ? collectionPath(canonicalRoot) : GALLERY_ROOTS[key];
+      if (!pathContains(['Art website'], root)) return [];
+      const descendants = collectionsUnder(collections, root);
+      return listPortfolioImagesFromCollections(this.client, descendants.map((collection) => collection.slug), {
+        order: 'display', limit: 200, beforeRequest: mediaReadBudget(),
+      });
+    }, this.mediaCacheTimeoutMs);
+  }
+
+  private async listHubCollections(forceRefresh: boolean): Promise<LuccasHubCollection[]> {
+    const { data } = await this.getCached('metadata:collections', forceRefresh, async () =>
+      (await this.client.listCollections()).collections,
+    this.mediaCacheTimeoutMs);
+    return data;
+  }
+
+  async listLibrary(cursor?: string, forceRefresh = false): Promise<CacheResult<LibraryShelf>> {
+    return this.getCached(`library:shelf:${cursor ?? ''}`, forceRefresh, async () =>
+      loadLibraryShelf(this.client, await this.listHubCollections(forceRefresh), cursor),
+    this.mediaCacheTimeoutMs);
+  }
+
+  async getLibraryBook(id: string, forceRefresh = false): Promise<CacheResult<LibraryBookPages>> {
+    // Resolve inside the current Library scope before using any cached pages.
+    // Arbitrary Hub slugs/IDs must never become public portfolio read endpoints.
+    const collections = libraryCollections(await this.listHubCollections(forceRefresh));
+    const collection = collections.find((candidate) => candidate.id === id);
+    if (!collection) throw new PortfolioRequestError('Book not found in Library.', 404);
+    return this.getCached(`library:book:${id}`, forceRefresh, () =>
+      loadLibraryBook(this.client, collection),
+    this.mediaCacheTimeoutMs);
   }
 }

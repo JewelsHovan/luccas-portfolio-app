@@ -122,6 +122,36 @@ export default {
             }
         }
 
+        if (url.pathname === '/api/library') {
+            try {
+                const cursor = url.searchParams.get('cursor') || undefined;
+                const forceRefresh = url.searchParams.get('refresh') === 'true';
+                const { data, cached } = await getAssetService(env).listLibrary(cursor, forceRefresh);
+                return json(request, { ...data, cached, source: 'luccas-asset-hub' }, {
+                    headers: { 'X-Cache-Status': cached ? 'fresh' : 'miss' }
+                });
+            } catch (error) {
+                return hubErrorResponse(request, error, 'Library');
+            }
+        }
+
+        const bookMatch = url.pathname.match(/^\/api\/library\/([^/]+)$/);
+        if (bookMatch) {
+            try {
+                const id = decodeURIComponent(bookMatch[1]);
+                const forceRefresh = url.searchParams.get('refresh') === 'true';
+                const { data, cached } = await getAssetService(env).getLibraryBook(id, forceRefresh);
+                return json(request, {
+                    ...data, totalCount: data.pages.length, cached, source: 'luccas-asset-hub'
+                }, {
+                    headers: { 'X-Cache-Status': cached ? 'fresh' : 'miss' }
+                });
+            } catch (error) {
+                if (error instanceof URIError) return json(request, { error: 'Invalid book identifier' }, { status: 400 });
+                return hubErrorResponse(request, error, 'Library book');
+            }
+        }
+
         const collectionMatch = url.pathname.match(/^\/api\/([^/]+)$/);
         const collectionSlug = collectionMatch ? decodeURIComponent(collectionMatch[1]) : '';
         if (collectionMatch && isPortfolioCollectionSlug(collectionSlug)) {
@@ -137,7 +167,6 @@ export default {
                     cached,
                     source: 'luccas-asset-hub'
                 }, {
-                    cacheControl: 'public, max-age=300',
                     headers: { 'X-Cache-Status': cached ? 'fresh' : 'miss' }
                 });
             } catch (error) {

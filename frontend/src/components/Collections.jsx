@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import apiService from '../services/api';
+import GalleryImage from './GalleryImage';
 import './Collections.css';
 
 const Collections = () => {
@@ -16,22 +17,27 @@ const Collections = () => {
   // Fetch images from API based on URL param
   useEffect(() => {
     if (!selectedCollection) return;
+    const controller = new AbortController();
+    imageRefs.current = [];
+    setImages([]);
 
     const fetchImages = async () => {
       try {
         setLoading(true);
         setError(null);
-        const collectionImages = await apiService.fetchCollectionImages(selectedCollection);
+        const collectionImages = await apiService.fetchCollectionImages(selectedCollection, { signal: controller.signal });
+        if (controller.signal.aborted) return;
         setImages(collectionImages);
         setCurrentIndex(0);
       } catch (err) {
-        setError(err.message);
+        if (!controller.signal.aborted) setError(err.message);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
 
     fetchImages();
+    return () => controller.abort();
   }, [selectedCollection]);
 
   // Track which image is most visible while scrolling
@@ -61,27 +67,30 @@ const Collections = () => {
     setCurrentIndex(newIndex);
   }, [images]);
 
-  const scrollToImage = (index) => {
+  const scrollToImage = useCallback((index) => {
     if (imageRefs.current[index] && containerRef.current) {
       imageRefs.current[index].scrollIntoView({
-        behavior: 'smooth',
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
         block: 'center'
       });
     }
-  };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.target?.closest?.('.header, input, textarea, select, [contenteditable="true"]')) return;
       if (e.key === 'ArrowDown' && currentIndex < images.length - 1) {
+        e.preventDefault();
         scrollToImage(currentIndex + 1);
       } else if (e.key === 'ArrowUp' && currentIndex > 0) {
+        e.preventDefault();
         scrollToImage(currentIndex - 1);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentIndex, images.length]);
+  }, [currentIndex, images.length, scrollToImage]);
 
   return (
     <div className="collections-page">
@@ -123,10 +132,10 @@ const Collections = () => {
                   className={`image-container ${index === currentIndex ? 'active' : ''}`}
                   ref={el => imageRefs.current[index] = el}
                 >
-                  <img
-                    src={image.url}
-                    alt={image.name || `Image ${index + 1}`}
-                    loading="lazy"
+                  <GalleryImage
+                    key={`${selectedCollection}:${image.id || index}:${image.url}`}
+                    image={image}
+                    index={index}
                   />
                   <div className="image-info">
                     <p>{image.name || `Image ${index + 1}`}</p>

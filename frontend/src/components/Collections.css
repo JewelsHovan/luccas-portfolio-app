@@ -98,8 +98,7 @@
   align-items: center;
   padding: 20px;
   margin-bottom: 40px;
-  opacity: 0.3;
-  transition: opacity 0.5s ease;
+  opacity: 1;
 }
 
 .image-container:last-child {
@@ -111,27 +110,44 @@
 }
 
 .image-container img {
-  max-width: 85%;
-  max-height: 75vh;
+  --image-max-width: 85%;
+  --image-max-height: 75vh;
+  max-width: var(--image-max-width);
+  max-height: var(--image-max-height);
   width: auto;
   height: auto;
   object-fit: contain;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-  transition: transform 0.3s ease;
 }
 
-.image-container.active img {
-  transform: scale(1.02);
+/* Match the original natural-size/max-size constraints before bytes arrive. */
+.image-container img[data-sized="true"] {
+  width: min(var(--image-natural-width), var(--image-max-width), calc(var(--image-max-height) * var(--image-aspect)));
+  aspect-ratio: var(--image-aspect);
+}
+
+/* Active-image tracking drives the progress bar, not artwork appearance. */
+
+.image-load-error {
+  padding: 20px;
+  text-align: center;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  color: #666;
+}
+
+.image-load-error button {
+  padding: 10px 20px;
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
+  font: inherit;
+  cursor: pointer;
 }
 
 .image-info {
   margin-top: 20px;
   text-align: center;
-  opacity: 0;
-  transition: opacity 0.5s ease;
-}
-
-.image-container.active .image-info {
   opacity: 1;
 }
 
@@ -221,7 +237,6 @@
   align-items: center;
   justify-content: center;
   height: calc(100vh - 200px);
-  padding-top: 80px;
   text-align: center;
   padding: 20px;
 }
@@ -271,6 +286,12 @@
   letter-spacing: 0.5px;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .collections-container { scroll-behavior: auto; }
+  .progress-bar { transition: none; }
+  .spinner { animation: none; }
+}
+
 /* Mobile adjustments */
 @media (max-width: 768px) {
   .collections-header {
@@ -299,8 +320,8 @@
   }
 
   .image-container img {
-    max-width: 95%;
-    max-height: 65vh;
+    --image-max-width: 95%;
+    --image-max-height: 65vh;
   }
 
   .image-info p {

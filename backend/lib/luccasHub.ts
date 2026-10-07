@@ -26,6 +26,7 @@ export interface LuccasHubFile {
 export interface ListFilesOptions {
   limit?: number;
   cursor?: string;
+  order?: 'display';
 }
 
 export interface SearchFilesOptions extends ListFilesOptions {
@@ -160,8 +161,8 @@ export class LuccasHubClient {
     return this.request('/collections');
   }
 
-  listFilesByCollection(slug: string, { limit, cursor }: ListFilesOptions = {}): Promise<CollectionFilesResponse> {
-    return this.request(`/collections/${encodeURIComponent(slug)}/files`, { limit, cursor });
+  listFilesByCollection(slug: string, { limit, cursor, order }: ListFilesOptions = {}): Promise<CollectionFilesResponse> {
+    return this.request(`/collections/${encodeURIComponent(slug)}/files`, { limit, cursor, order });
   }
 
   searchFiles({ tag, search, limit, cursor }: SearchFilesOptions = {}): Promise<FilesResponse> {
